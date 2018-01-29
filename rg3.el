@@ -192,46 +192,47 @@
      collect (list :beg (1- beg) :end (1- end)))))
 
 (defun rg3--async-action (cand)
-  (rg3--delete-overlays)
-  (-if-let*
-      (((&plist :file-path file-path
-                :line-no line-no
-                :col-no col-no
-                :content content)
-        (rg3--decompose-vimgrep-output-line cand))
-       (file-abs-path
-        (expand-file-name file-path rg3--current-dir))
-       (buffer-to-display
-        (or (find-buffer-visiting file-abs-path)
-            (let ((new-buf (find-file-noselect file-abs-path)))
-              (when rg3--append-persistent-buffers
-                (push new-buf rg3--currently-opened-persistent-buffers))
-              new-buf)))
-       (olay-cols
-        (rg3--get-overlay-columns
-         (rg3--pcre-to-elisp-regexp helm-pattern)
-         content)))
-      (progn
-        (pop-to-buffer buffer-to-display)
-        (goto-char (point-min))
-        (forward-line line-no)
-        (let* ((line-olay
-                (rg3--make-overlay-with-face
-                 (line-beginning-position)
-                 (line-end-position)
-                 'rg3-preview-line-highlight))
-               (match-olays
-                (cl-loop
-                 for (:beg beg :end end) in olay-cols
-                 for pt-beg = (+ (point) beg)
-                 for pt-end = (+ (point) end)
-                 collect (rg3--make-overlay-with-face
-                          pt-beg pt-end 'rg3-preview-match-highlight))))
-          (setq rg3--current-overlays
-                (append (list line-olay) match-olays)))
-        (forward-char col-no)
-        (recenter))
-    (user-error "the line '%s' could not be parsed" cand)))
+  (let ((default-directory rg3--current-dir))
+    (rg3--delete-overlays)
+    (-if-let*
+        (((&plist :file-path file-path
+                  :line-no line-no
+                  :col-no col-no
+                  :content content)
+          (rg3--decompose-vimgrep-output-line cand))
+         (file-abs-path
+          (expand-file-name file-path rg3--current-dir))
+         (buffer-to-display
+          (or (find-buffer-visiting file-abs-path)
+              (let ((new-buf (find-file-noselect file-abs-path)))
+                (when rg3--append-persistent-buffers
+                  (push new-buf rg3--currently-opened-persistent-buffers))
+                new-buf)))
+         (olay-cols
+          (rg3--get-overlay-columns
+           (rg3--pcre-to-elisp-regexp helm-pattern)
+           content)))
+        (progn
+          (pop-to-buffer buffer-to-display)
+          (goto-char (point-min))
+          (forward-line line-no)
+          (let* ((line-olay
+                  (rg3--make-overlay-with-face
+                   (line-beginning-position)
+                   (line-end-position)
+                   'rg3-preview-line-highlight))
+                 (match-olays
+                  (cl-loop
+                   for (:beg beg :end end) in olay-cols
+                   for pt-beg = (+ (point) beg)
+                   for pt-end = (+ (point) end)
+                   collect (rg3--make-overlay-with-face
+                            pt-beg pt-end 'rg3-preview-match-highlight))))
+            (setq rg3--current-overlays
+                  (append (list line-olay) match-olays)))
+          (forward-char col-no)
+          (recenter))
+      (user-error "the line '%s' could not be parsed" cand))))
 
 (defun rg3--async-persistent-action (cand)
   (let ((rg3--append-persistent-buffers t))
