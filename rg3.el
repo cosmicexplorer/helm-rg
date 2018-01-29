@@ -104,32 +104,34 @@
     (insert ev)))
 
 (defun rg3--make-process ()
-  (if (string= "" helm-pattern)
-      (rg3--make-dummy-process)
-    (let* ((case-insensitive-p
-            (let ((case-fold-search nil))
-              (string-match-p
-               rg3--case-insensitive-pattern-regexp helm-pattern)))
-           (rg-cmd
-            (append
-             rg3-base-command
-             (list "-g" rg3--glob-string)
-             (if case-insensitive-p '("-i") ())
-             (list helm-pattern)))
-           (real-proc (make-process
-                       :name rg3--process-name
-                       :buffer rg3--process-buffer-name
-                       :command rg-cmd
-                       :filter #'rg3--real-process-filter
-                       :noquery t))
-           (helm-src-name
-            (format "rg cmd: '%s' @ %s"
-                    (mapconcat (lambda (s) (format "'%s'" s))
-                               rg-cmd " ")
-                    rg3--current-dir)))
-      (helm-attrset 'name helm-src-name)
-      (set-process-query-on-exit-flag real-proc nil)
-      real-proc)))
+  (let ((default-directory rg3--current-dir))
+    (if (string= "" helm-pattern)
+        (rg3--make-dummy-process)
+      (let* ((case-insensitive-p
+              (let ((case-fold-search nil))
+                (string-match-p
+                 rg3--case-insensitive-pattern-regexp helm-pattern)))
+             (rg-cmd
+              (append
+               rg3-base-command
+               (list "-g" rg3--glob-string)
+               (if case-insensitive-p '("-i") ())
+               (list helm-pattern)))
+             (real-proc (make-process
+                         :name rg3--process-name
+                         :buffer rg3--process-buffer-name
+
+                         :command rg-cmd
+                         :filter #'rg3--real-process-filter
+                         :noquery t))
+             (helm-src-name
+              (format "rg cmd: '%s' @ %s"
+                      (mapconcat (lambda (s) (format "'%s'" s))
+                                 rg-cmd " ")
+                      rg3--current-dir)))
+        (helm-attrset 'name helm-src-name)
+        (set-process-query-on-exit-flag real-proc nil)
+        real-proc))))
 
 (defun rg3--ansi-color (line)
   (ansi-color-apply line))
@@ -248,6 +250,12 @@
                           rg3--process-buffer-name
                           rg3--error-buffer-name))
 
+(defun rg3--do-rg3 (rg-pattern)
+  (helm :sources '(rg3--process-source)
+        :buffer rg3--helm-buffer-name
+        :input rg-pattern
+        :prompt "rg pattern: "))
+
 
 ;; Toggles and settings
 (defmacro rg3--run-after-exit (&rest body)
@@ -256,13 +264,21 @@
 (defun rg3--set-glob ()
   (interactive)
   (let* ((pat helm-pattern)
-         (dir rg3--current-dir))
+         (start-dir rg3--current-dir))
     (rg3--run-after-exit
-     (let* ((glob-string
-             (read-string
-              "rg glob: " rg3--glob-string 'rg3--glob-string-history))
-            (rg3--glob-string glob-string))
-       (rg3 helm-pattern dir)))))
+     (let ((rg3--current-dir start-dir)
+           (rg3--glob-string
+            (read-string
+             "rg glob: " rg3--glob-string 'rg3--glob-string-history)))
+       (rg3--do-rg3 pat)))))
+
+(defun rg3--set-dir ()
+  (interactive)
+  (let ((pat helm-pattern))
+    (rg3--run-after-exit
+     (let ((rg3--current-dir
+            (read-directory-name "rg directory: " rg3--current-dir nil t)))
+       (rg3--do-rg3 pat)))))
 
 
 ;; Keymap
@@ -270,6 +286,7 @@
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
     (define-key map (kbd "M-g") #'rg3--set-glob)
+    (define-key map (kbd "M-d") #'rg3--set-dir)
     map)
   "???")
 
@@ -287,17 +304,14 @@
 
 ;; Autoloaded functions
 ;;;###autoload
-(defun rg3 (rg-pattern start-dir)
+(defun rg3 (rg-pattern)
   "???
 
 \\{rg3-map}"
-  (interactive (list "" default-directory))
-  (let* ((rg3--current-dir start-dir)
+  (interactive (list ""))
+  (let* ((rg3--current-dir (or rg3--current-dir default-directory))
          (rg3--glob-string (or rg3--glob-string rg3-default-glob-string)))
-    (unwind-protect (helm :sources '(rg3--process-source)
-                          :buffer rg3--helm-buffer-name
-                          :input rg-pattern
-                          :prompt "rg pattern: ")
+    (unwind-protect (rg3--do-rg3 rg-pattern)
       (rg3--unwind-cleanup))))
 
 (provide 'rg3)
