@@ -7,6 +7,7 @@
 (require 'cl-lib)
 (require 'dash)
 (require 'helm)
+(require 'helm-lib)
 (require 'rx)
 
 
@@ -35,6 +36,11 @@
   "???"
   :type 'string
   :safe #'rg3--always-safe-local
+  :group 'rg3)
+
+(defcustom rg3-thing-at-point 'symbol
+  "???"
+  :type 'symbol
   :group 'rg3)
 
 (defface rg3-preview-line-highlight
@@ -261,6 +267,11 @@
         :input rg-pattern
         :prompt "rg pattern: "))
 
+(defun rg3--get-thing-at-pt ()
+  (helm-aif (thing-at-point rg3-thing-at-point)
+      (substring-no-properties it)
+    ""))
+
 
 ;; Toggles and settings
 (defmacro rg3--run-after-exit (&rest body)
@@ -313,7 +324,7 @@
   "???
 
 \\{rg3-map}"
-  (interactive (list ""))
+  (interactive (list (rg3--get-thing-at-pt)))
   (let* ((rg3--current-dir (or rg3--current-dir default-directory))
          (rg3--glob-string (or rg3--glob-string rg3-default-glob-string)))
     (unwind-protect (rg3--do-rg3 rg-pattern)
