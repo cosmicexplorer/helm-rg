@@ -67,6 +67,9 @@
          (group (* nonl))
          eol)))
 
+(defconst rg3--case-insensitive-pattern-regexp
+  (rx (: bos (* (not upper)) eos)))
+
 
 ;; Variables
 (defvar rg3--append-persistent-buffers nil)
@@ -91,7 +94,7 @@
                       :noquery t))
          (helm-src-name
           (format "rg empty dummy process (no output) @ %s"
-                  default-directory)))
+                  rg3--current-dir)))
     (helm-attrset 'name helm-src-name)
     dummy-proc))
 
@@ -103,10 +106,16 @@
 (defun rg3--make-process ()
   (if (string= "" helm-pattern)
       (rg3--make-dummy-process)
-    (let* ((rg-cmd
-            (append rg3-base-command
-                    (list "-g" rg3--glob-string
-                          helm-pattern)))
+    (let* ((case-insensitive-p
+            (let ((case-fold-search nil))
+              (string-match-p
+               rg3--case-insensitive-pattern-regexp helm-pattern)))
+           (rg-cmd
+            (append
+             rg3-base-command
+             (list "-g" rg3--glob-string)
+             (if case-insensitive-p '("-i") ())
+             (list helm-pattern)))
            (real-proc (make-process
                        :name rg3--process-name
                        :buffer rg3--process-buffer-name
@@ -115,8 +124,9 @@
                        :noquery t))
            (helm-src-name
             (format "rg cmd: '%s' @ %s"
-                    (mapconcat #'identity rg-cmd " ")
-                    default-directory)))
+                    (mapconcat (lambda (s) (format "'%s'" s))
+                               rg-cmd " ")
+                    rg3--current-dir)))
       (helm-attrset 'name helm-src-name)
       (set-process-query-on-exit-flag real-proc nil)
       real-proc)))
