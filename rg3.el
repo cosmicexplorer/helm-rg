@@ -121,6 +121,27 @@
      :col-no (-> col-no string-to-number 1-)
      :content content)))
 
+(defun rg3--pcre-to-elisp-regexp (pcre)
+  ;; This is very simple conversion
+  (with-temp-buffer
+    (insert pcre)
+    (goto-char (point-min))
+    ;; convert (, ), {, }, |
+    (while (re-search-forward "[(){}|]" nil t)
+      (backward-char 1)
+      (cond ((looking-back "\\\\\\\\" nil))
+            ((looking-back "\\\\" nil)
+             (delete-char -1))
+            (t
+             (insert "\\")))
+      (forward-char 1))
+    ;; convert \s and \S -> \s- \S-
+    (goto-char (point-min))
+    (while (re-search-forward "\\(\\\\s\\)" nil t)
+      (unless (looking-back "\\\\\\\\s" nil)
+        (insert "-")))
+    (buffer-string)))
+
 (defun rg3--make-overlay-with-face (beg end face)
   (let ((olay (make-overlay beg end)))
     (overlay-put olay 'face face)
@@ -130,14 +151,14 @@
   (cl-mapc #'delete-overlay rg3--current-overlays)
   (setq rg3--current-overlays nil))
 
-(defun rg3--get-overlay-columns (content)
-  (cl-loop
-   with propertized-start = 0
-   for next-st = (next-property-change propertized-start content)
-   while next-st
-   for next-end = (next-property-change next-st content)
-   do (setq propertized-start next-end)
-   collect (list :beg next-st :end next-end)))
+(defun rg3--get-overlay-columns (elisp-regexp content)
+  (with-temp-buffer
+    (insert content)
+    (goto-char (point-min))
+    (cl-loop
+     while (re-search-forward elisp-regexp nil t)
+     for (beg end) = (match-data t)
+     collect (list :beg (1- beg) :end (1- end)))))
 
 (defun rg3--async-action (cand)
   (rg3--delete-overlays)
@@ -153,7 +174,10 @@
               (when rg3--append-persistent-buffers
                 (push new-buf rg3--currently-opened-persistent-buffers))
               new-buf)))
-       (olay-cols (rg3--get-overlay-columns content)))
+       (olay-cols
+        (rg3--get-overlay-columns
+         (rg3--pcre-to-elisp-regexp helm-pattern)
+         content)))
       (progn
         (pop-to-buffer buffer-to-display)
         (goto-char (point-min))
@@ -164,11 +188,12 @@
                  (line-end-position)
                  'rg3-preview-line-highlight))
                (match-olays
-                (cl-loop for (:beg beg :end end) in olay-cols
-                        for pt-beg = (+ (point) beg)
-                        for pt-end = (+ (point) end)
-                        collect (rg3--make-overlay-with-face
-                                 pt-beg pt-end 'rg3-preview-match-highlight))))
+                (cl-loop
+                 for (:beg beg :end end) in olay-cols
+                 for pt-beg = (+ (point) beg)
+                 for pt-end = (+ (point) end)
+                 collect (rg3--make-overlay-with-face
+                          pt-beg pt-end 'rg3-preview-match-highlight))))
           (setq rg3--current-overlays
                 (append (list line-olay) match-olays)))
         (forward-char col-no)
