@@ -69,6 +69,8 @@
 
 (defvar rg3--current-overlays nil)
 
+(defvar rg3--current-dir nil)
+
 
 ;; Logic
 (defun rg3--make-dummy-process ()
@@ -105,6 +107,9 @@
       (helm-attrset 'name helm-src-name)
       (set-process-query-on-exit-flag real-proc nil)
       real-proc)))
+
+(defun rg3--ansi-color (line)
+  (ansi-color-apply line))
 
 (defun rg3--decompose-vimgrep-output-line (line)
   (-when-let* ((_ (string-match rg3--vimgrep-output-line-regexp line))
@@ -148,8 +153,7 @@
               (when rg3--append-persistent-buffers
                 (push new-buf rg3--currently-opened-persistent-buffers))
               new-buf)))
-       (olay-cols (msg-evals (((rg3--get-overlay-columns content) s)
-                              content))))
+       (olay-cols (rg3--get-overlay-columns content)))
       (progn
         (pop-to-buffer buffer-to-display)
         (goto-char (point-min))
@@ -187,14 +191,15 @@
        (kill-buffer buf)))
    bufs))
 
-(defun rg3--cleanup ()
+(defun rg3--unwind-cleanup ()
   (rg3--delete-overlays)
   (cl-mapc #'kill-buffer rg3--currently-opened-persistent-buffers)
   (setq rg3--currently-opened-persistent-buffers nil)
   (rg3--kill-proc-if-live rg3--process-name)
   (rg3--kill-bufs-if-live rg3--helm-buffer-name
                           rg3--process-buffer-name
-                          rg3--error-buffer-name))
+                          rg3--error-buffer-name)
+  (setq rg3--current-dir nil))
 
 
 ;; Keymap
@@ -212,23 +217,24 @@
     :candidates-process #'rg3--make-process
     :candidate-number-limit rg3-candidate-limit
     :action (helm-make-actions "Visit" #'rg3--async-action)
-    :filter-one-by-one #'ansi-color-apply
+    :filter-one-by-one #'rg3--ansi-color
     :persistent-action #'rg3--async-persistent-action
-    :cleanup #'rg3--cleanup
     :keymap 'rg3-map))
 
 
 ;; Autoloaded functions
 ;;;###autoload
-(defun rg3 (rg-pattern)
+(defun rg3 (rg-pattern start-dir)
   "???
 
 \\{rg3-map}"
-  (interactive (list ""))
-  (helm :sources '(rg3--process-source)
-        :buffer rg3--helm-buffer-name
-        :input rg-pattern
-        :prompt "rg pattern: "))
+  (interactive (list "" default-directory))
+  (setq rg3--current-dir start-dir)
+  (unwind-protect (helm :sources '(rg3--process-source)
+                        :buffer rg3--helm-buffer-name
+                        :input rg-pattern
+                        :prompt "rg pattern: ")
+    (rg3--unwind-cleanup)))
 
 (provide 'rg3)
 ;;; rg3.el ends here
