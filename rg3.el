@@ -193,9 +193,11 @@
                 :col-no col-no
                 :content content)
         (rg3--decompose-vimgrep-output-line cand))
+       (file-abs-path
+        (expand-file-name file-path rg3--current-dir))
        (buffer-to-display
-        (or (find-buffer-visiting file-path)
-            (let ((new-buf (find-file-noselect file-path)))
+        (or (find-buffer-visiting file-abs-path)
+            (let ((new-buf (find-file-noselect file-abs-path)))
               (when rg3--append-persistent-buffers
                 (push new-buf rg3--currently-opened-persistent-buffers))
               new-buf)))
@@ -243,8 +245,11 @@
 
 (defun rg3--unwind-cleanup ()
   (rg3--delete-overlays)
-  (cl-mapc #'kill-buffer rg3--currently-opened-persistent-buffers)
-  (setq rg3--currently-opened-persistent-buffers nil)
+  (cl-loop
+   for opened-buf in rg3--currently-opened-persistent-buffers
+   unless (eq (current-buffer) opened-buf)
+   do (kill-buffer opened-buf)
+   finally (setq rg3--currently-opened-persistent-buffers nil))
   (rg3--kill-proc-if-live rg3--process-name)
   (rg3--kill-bufs-if-live rg3--helm-buffer-name
                           rg3--process-buffer-name
