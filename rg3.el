@@ -6,11 +6,11 @@
 
 ;; This file is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 ;; Author: Danny McClanahan
 ;; Version: 0.1
@@ -142,7 +142,7 @@ Set to the empty string to match every file."
 
 ;; Variables
 (defvar rg3--append-persistent-buffers nil
-  "Whether to record buffers opened during an `rg3' session")
+  "Whether to record buffers opened during an `rg3' session.")
 
 (defvar rg3--currently-opened-persistent-buffers nil
   "List of buffers opened temporarily during an `rg3' session.")
@@ -216,7 +216,7 @@ Set to the empty string to match every file."
          :content content)))))
 
 (defun rg3--pcre-to-elisp-regexp (pcre)
-  "Convert the string PCRE to an emacs lisp regexp."
+  "Convert the string PCRE to an Emacs Lisp regexp."
   (with-temp-buffer
     (insert pcre)
     (goto-char (point-min))
