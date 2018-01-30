@@ -1,5 +1,4 @@
-;;; rg3.el --- RipGrep is Great: a helm interface for searching file content
-;;; really fast -*- lexical-binding: t -*-
+;;; rg3.el --- RipGrep is Great: a helm interface for searching file content really fast -*- lexical-binding: t -*-
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation; either version 3, or (at your option)
@@ -15,8 +14,8 @@
 
 ;; Author: Danny McClanahan <danieldmcclanahan@gmail.com>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "24") (helm "1.9.6") (cl-lib "0.5"))
-;; Keywords: find, file, files, helm, fast, finder
+;; Package-Requires: ((emacs "24") (helm "2.8.8") (cl-lib "0.5"))
+;; Keywords: find, file, files, helm, fast, rg, ripgrep, grep, search
 
 
 ;;; Commentary:
@@ -64,7 +63,6 @@
 
 (require 'ansi-color)
 (require 'cl-lib)
-(require 'dash)
 (require 'helm)
 (require 'helm-lib)
 (require 'rx)
@@ -202,14 +200,15 @@
   (ansi-color-apply line))
 
 (defun rg3--decompose-vimgrep-output-line (line)
-  (-when-let* ((_ (string-match rg3--vimgrep-output-line-regexp line))
-               ((file-path line-no col-no content)
-                (--map (match-string it line) (number-sequence 1 4))))
-    (list
-     :file-path file-path
-     :line-no (-> line-no string-to-number 1-)
-     :col-no (-> col-no string-to-number 1-)
-     :content content)))
+  (when (string-match rg3--vimgrep-output-line-regexp line)
+    (let ((matches (cl-mapcar (lambda (ind) (match-string ind line))
+                              (number-sequence 1 4))))
+      (cl-destructuring-bind (file-path line-no col-no content) matches
+        (list
+         :file-path file-path
+         :line-no (1- (string-to-number line-no))
+         :col-no (1- (string-to-number col-no))
+         :content content)))))
 
 (defun rg3--pcre-to-elisp-regexp (pcre)
   ;; This is very simple conversion
@@ -253,45 +252,41 @@
 (defun rg3--async-action (cand)
   (let ((default-directory rg3--current-dir))
     (rg3--delete-overlays)
-    (-if-let*
-        (((&plist :file-path file-path
-                  :line-no line-no
-                  :col-no col-no
-                  :content content)
-          (rg3--decompose-vimgrep-output-line cand))
-         (file-abs-path
-          (expand-file-name file-path rg3--current-dir))
-         (buffer-to-display
-          (or (find-buffer-visiting file-abs-path)
-              (let ((new-buf (find-file-noselect file-abs-path)))
-                (when rg3--append-persistent-buffers
-                  (push new-buf rg3--currently-opened-persistent-buffers))
-                new-buf)))
-         (olay-cols
-          (rg3--get-overlay-columns
-           (rg3--pcre-to-elisp-regexp helm-pattern)
-           content)))
-        (progn
-          (pop-to-buffer buffer-to-display)
-          (goto-char (point-min))
-          (forward-line line-no)
-          (let* ((line-olay
-                  (rg3--make-overlay-with-face
-                   (line-beginning-position)
-                   (line-end-position)
-                   'rg3-preview-line-highlight))
-                 (match-olays
-                  (cl-loop
-                   for (:beg beg :end end) in olay-cols
-                   for pt-beg = (+ (point) beg)
-                   for pt-end = (+ (point) end)
-                   collect (rg3--make-overlay-with-face
-                            pt-beg pt-end 'rg3-preview-match-highlight))))
-            (setq rg3--current-overlays
-                  (append (list line-olay) match-olays)))
-          (forward-char col-no)
-          (recenter))
-      (user-error "the line '%s' could not be parsed" cand))))
+    (cl-destructuring-bind (&key file-path line-no col-no content)
+        (rg3--decompose-vimgrep-output-line cand)
+      (let* ((file-abs-path
+              (expand-file-name file-path))
+             (buffer-to-display
+              (or (find-buffer-visiting file-abs-path)
+                  (let ((new-buf (find-file-noselect file-abs-path)))
+                    (when rg3--append-persistent-buffers
+                      (push new-buf rg3--currently-opened-persistent-buffers))
+                    new-buf)))
+             (olay-cols
+              (rg3--get-overlay-columns
+               (rg3--pcre-to-elisp-regexp helm-pattern)
+               content)))
+        (pop-to-buffer buffer-to-display)
+        (goto-char (point-min))
+        (forward-line line-no)
+        (let* ((line-olay
+                (rg3--make-overlay-with-face
+                 (line-beginning-position)
+                 (line-end-position)
+                 'rg3-preview-line-highlight))
+               (match-olays
+                (cl-loop
+                 for el in olay-cols
+                 collect (cl-destructuring-bind (&key beg end) el
+                           (let* ((pt (point))
+                                  (pt-beg (+ pt beg))
+                                  (pt-end (+ pt end)))
+                             (rg3--make-overlay-with-face
+                              pt-beg pt-end 'rg3-preview-match-highlight))))))
+          (setq rg3--current-overlays
+                (append (list line-olay) match-olays)))
+        (forward-char col-no)
+        (recenter)))))
 
 (defun rg3--async-persistent-action (cand)
   (let ((rg3--append-persistent-buffers t))
