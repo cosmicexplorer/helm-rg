@@ -24,7 +24,7 @@
 ;; The below is generated from a README at
 ;; https://github.com/cosmicexplorer/rg3.
 
-;; RipGrep Goes Great with emacs. Search directories fast, using `ripgrep' and
+;; RipGrep Goes Great with Emacs. Search directories fast, using `ripgrep' and
 ;; `helm'. Inspired by `helm-ag' and `f3'.
 
 
@@ -70,12 +70,15 @@
 
 
 ;; Helpers
-(defun rg3--always-safe-local (_) t)
+(defun rg3--always-safe-local (_)
+  "Use as a :safe predicate in a `defcustom' form to accept any local override."
+  t)
 
 
 ;; Customization
-(defgroup rg3 nil "Group for `rg3' customizations."
-  :group 'helm)
+(defgroup rg3 nil
+  "Group for `rg3' customizations."
+  :group 'files)
 
 (defcustom rg3-base-command '("rg" "--vimgrep" "--color=always")
   "The beginning of the command line to invoke ripgrep, as a list."
@@ -90,8 +93,8 @@
   :group 'rg3)
 
 (defcustom rg3-default-glob-string ""
-  "The glob pattern used for the '-g' argument to ripgrep. Blank to match every
-file."
+  "The glob pattern used for the '-g' argument to ripgrep.
+Set to the empty string to match every file."
   :type 'string
   :safe #'rg3--always-safe-local
   :group 'rg3)
@@ -136,21 +139,28 @@ file."
 
 
 ;; Variables
-(defvar rg3--append-persistent-buffers nil)
+(defvar rg3--append-persistent-buffers nil
+  "Whether to record buffers opened during an `rg3' session")
 
-(defvar rg3--currently-opened-persistent-buffers nil)
+(defvar rg3--currently-opened-persistent-buffers nil
+  "List of buffers opened temporarily during an `rg3' session.")
 
-(defvar rg3--current-overlays nil)
+(defvar rg3--current-overlays nil
+  "List of overlays used to highlight matches in `rg3'.")
 
-(defvar rg3--current-dir nil)
+(defvar rg3--current-dir nil
+  "Working directory for the current `rg3' session.")
 
-(defvar rg3--glob-string nil)
+(defvar rg3--glob-string nil
+  "Glob string used for the current `rg3' session.")
 
-(defvar rg3--glob-string-history nil)
+(defvar rg3--glob-string-history nil
+  "History variable for the selection of `rg3--glob-string'.")
 
 
 ;; Logic
 (defun rg3--make-dummy-process ()
+  "Make a process that immediately exits to display just a title."
   (let* ((dummy-proc (make-process
                       :name rg3--process-name
                       :buffer rg3--process-buffer-name
@@ -162,12 +172,8 @@ file."
     (helm-attrset 'name helm-src-name)
     dummy-proc))
 
-(defun rg3--real-process-filter (proc ev)
-  (with-current-buffer (process-buffer proc)
-    (goto-char (point-max))
-    (insert ev)))
-
 (defun rg3--make-process ()
+  "Invoke ripgrep in `rg3--current-dir' with `helm-pattern'."
   (let ((default-directory rg3--current-dir))
     (if (string= "" helm-pattern)
         (rg3--make-dummy-process)
@@ -184,9 +190,7 @@ file."
              (real-proc (make-process
                          :name rg3--process-name
                          :buffer rg3--process-buffer-name
-
                          :command rg-cmd
-                         :filter #'rg3--real-process-filter
                          :noquery t))
              (helm-src-name
               (format "rg cmd: '%s' @ %s"
@@ -197,10 +201,8 @@ file."
         (set-process-query-on-exit-flag real-proc nil)
         real-proc))))
 
-(defun rg3--ansi-color (line)
-  (ansi-color-apply line))
-
 (defun rg3--decompose-vimgrep-output-line (line)
+  "Parse LINE into its constituent elements, returning a plist."
   (when (string-match rg3--vimgrep-output-line-regexp line)
     (let ((matches (cl-mapcar (lambda (ind) (match-string ind line))
                               (number-sequence 1 4))))
@@ -212,7 +214,7 @@ file."
          :content content)))))
 
 (defun rg3--pcre-to-elisp-regexp (pcre)
-  ;; This is very simple conversion
+  "Convert the string PCRE to an emacs lisp regexp."
   (with-temp-buffer
     (insert pcre)
     (goto-char (point-min))
@@ -233,15 +235,18 @@ file."
     (buffer-string)))
 
 (defun rg3--make-overlay-with-face (beg end face)
+  "Generate an overlay in region BEG to END with face FACE."
   (let ((olay (make-overlay beg end)))
     (overlay-put olay 'face face)
     olay))
 
 (defun rg3--delete-overlays ()
+  "Delete all cached overlays in `rg3--current-overlays', and clear it."
   (cl-mapc #'delete-overlay rg3--current-overlays)
   (setq rg3--current-overlays nil))
 
 (defun rg3--get-overlay-columns (elisp-regexp content)
+  "Find regions matching ELISP-REGEXP in the string CONTENT."
   (with-temp-buffer
     (insert content)
     (goto-char (point-min))
@@ -251,6 +256,8 @@ file."
      collect (list :beg (1- beg) :end (1- end)))))
 
 (defun rg3--async-action (cand)
+  "Visit the file at the line and column specified by CAND.
+The match is highlighted in its buffer."
   (let ((default-directory rg3--current-dir))
     (rg3--delete-overlays)
     (cl-destructuring-bind (&key file-path line-no col-no content)
@@ -290,15 +297,20 @@ file."
         (recenter)))))
 
 (defun rg3--async-persistent-action (cand)
+  "Visit the file at the line and column specified by CAND.
+Call `rg3--async-action', but push the buffer corresponding to CAND to
+`rg3--current-overlays', if there was no buffer visiting it already."
   (let ((rg3--append-persistent-buffers t))
     (rg3--async-action cand)))
 
 (defun rg3--kill-proc-if-live (proc-name)
+  "Delete the process named PROC-NAME, if it is alive."
   (let ((proc (get-process proc-name)))
     (when (process-live-p proc)
       (delete-process proc))))
 
 (defun rg3--kill-bufs-if-live (&rest bufs)
+  "Kill any live buffers in BUFS."
   (cl-mapc
    (lambda (buf)
      (when (buffer-live-p (get-buffer buf))
@@ -306,6 +318,7 @@ file."
    bufs))
 
 (defun rg3--unwind-cleanup ()
+  "Reset all the temporary state in `defvar's in this package."
   (rg3--delete-overlays)
   (cl-loop
    for opened-buf in rg3--currently-opened-persistent-buffers
@@ -318,12 +331,14 @@ file."
                           rg3--error-buffer-name))
 
 (defun rg3--do-rg3 (rg-pattern)
+  "Invoke ripgrep to search for RG-PATTERN, using `helm'."
   (helm :sources '(rg3--process-source)
         :buffer rg3--helm-buffer-name
         :input rg-pattern
         :prompt "rg pattern: "))
 
 (defun rg3--get-thing-at-pt ()
+  "Get the object surrounding point, or the empty string."
   (helm-aif (thing-at-point rg3-thing-at-point)
       (substring-no-properties it)
     ""))
@@ -331,9 +346,11 @@ file."
 
 ;; Toggles and settings
 (defmacro rg3--run-after-exit (&rest body)
+  "Wrap BODY in `helm-run-after-exit'."
   `(helm-run-after-exit (lambda () ,@body)))
 
 (defun rg3--set-glob ()
+  "Set the glob string used to invoke ripgrep and search again."
   (interactive)
   (let* ((pat helm-pattern)
          (start-dir rg3--current-dir))
@@ -345,6 +362,7 @@ file."
        (rg3--do-rg3 pat)))))
 
 (defun rg3--set-dir ()
+  "Set the directory in which to invoke ripgrep and search again."
   (interactive)
   (let ((pat helm-pattern))
     (rg3--run-after-exit
@@ -369,7 +387,7 @@ file."
     :candidates-process #'rg3--make-process
     :candidate-number-limit rg3-candidate-limit
     :action (helm-make-actions "Visit" #'rg3--async-action)
-    :filter-one-by-one #'rg3--ansi-color
+    :filter-one-by-one #'ansi-color-apply
     :persistent-action #'rg3--async-persistent-action
     :keymap 'rg3-map)
   "Helm async source to search files in a directory using ripgrep.")
