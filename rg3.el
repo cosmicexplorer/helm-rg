@@ -1,4 +1,63 @@
-;;; -*- lexical-binding: t -*-
+;;; rg3.el --- RipGrep is Great: a helm interface for searching file content
+;;; really fast -*- lexical-binding: t -*-
+;; This file is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 3, or (at your option)
+;; any later version.
+
+;; This file is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;; Author: Danny McClanahan <danieldmcclanahan@gmail.com>
+;; Version: 0.1
+;; Package-Requires: ((emacs "24") (helm "1.9.6") (cl-lib "0.5"))
+;; Keywords: find, file, files, helm, fast, finder
+
+
+;;; Commentary:
+
+;; The below is generated from a README at
+;; https://github.com/cosmicexplorer/rg3.
+
+;; RipGrep Goes Great with emacs. Search directories fast, using `ripgrep' and
+;; `helm'. Inspired by `helm-ag' and `f3'.
+
+
+;; Usage:
+
+;; *See the `ripgrep' whirlwind tour for further information on invoking
+;; `ripgrep'.*
+
+;; - Invoke the interactive function `rg3' to start a search with `ripgrep' in
+;; the current directory.
+;; - `helm' is used to browse the results and update the output as you
+;; type.
+;; - Each line has the file path, the line number, and the column number of the
+;; start of the match, and each part is highlighted differently.
+;; - Use 'TAB' to invoke the helm persistent action, which previews the result
+;; and highlights the matched text in the preview.
+;; - Use 'RET' to visit the file containing the result, move point to the start
+;; of the match, and recenter.
+;; - The text entered into the minibuffer is interpreted as a PCRE regexp which
+;; `ripgrep' uses to search your files.
+;; - Use 'M-d' to select a new directory to search from.
+;; - Use 'M-g' to input a glob pattern to filter files by, e.g. `*.py'.
+;; - The glob pattern defaults to the value of `rg3-default-glob-string', which
+;; is an empty string (matches every file) unless you customize it.
+;; - Pressing 'M-g' again shows the same minibuffer prompt for the glob
+;; pattern, with the string that was previously input.
+
+
+;; License:
+
+;; GPL 3.0+
+
+;; End Commentary
 
 
 ;;; Code:

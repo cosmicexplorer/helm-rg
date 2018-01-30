@@ -1,17 +1,23 @@
-rg3
-===
+rg<sup>3</sup>
+==============
 
-*don't worry about the name too much yet, ok?*
+RipGrep Goes Great with emacs. Search directories fast, using [`ripgrep`](https://github.com/BurntSushi/ripgrep) and [`helm`](https://github.com/emacs-helm/helm). Inspired by [`helm-ag`](https://github.com/syohex/emacs-helm-ag) and [`f3`](https://github.com/cosmicexplorer/f3).
 
-A quick and dirty interactive search tool using [ripgrep](https://github.com/BurntSushi/ripgrep) as a backend. There may be other differentiators too *(???)*.
+# Usage
 
-# feature list
+*See the [`ripgrep` whirlwind tour](https://github.com/BurntSushi/ripgrep#whirlwind-tour) for further information on invoking `ripgrep`.*
 
-- [ ] search literal string from current directory
-    - [ ] display highlighted `rg` output
-        - can we use rg's highlighting?
-        - could we/would we want to add any additional hl?
-        - jump to file (with toggleable customize var like helm ag)
-            - results are grouped by file
-- [ ] search pcre string and toggle between that and literal searches
-- [ ] hook into functionality e.g. `rg`'s `-g` argument
+- Invoke the interactive function `rg3` to start a search with `ripgrep` in the current directory.
+    - `helm` is used to browse the results and update the output as you type.
+    - Each line has the file path, the line number, and the column number of the start of the match, and each part is highlighted differently.
+    - Use <kbd>TAB</kbd> to invoke the helm persistent action, which previews the result and highlights the matched text in the preview.
+    - Use <kbd>RET</kbd> to visit the file containing the result, move point to the start of the match, and recenter.
+- The text entered into the minibuffer is interpreted as a [PCRE](https://pcre.org) regexp which `ripgrep` uses to search your files.
+- Use <kbd>M-d</kbd> to select a new directory to search from.
+- Use <kbd>M-g</kbd> to input a glob pattern to filter files by, e.g. `*.py`.
+    - The glob pattern defaults to the value of `rg3-default-glob-string`, which is an empty string (matches every file) unless you customize it.
+    - Pressing <kbd>M-g</kbd> again shows the same minibuffer prompt for the glob pattern, with the string that was previously input.
+
+# License
+
+[GPL 3.0+](./LICENSE)
