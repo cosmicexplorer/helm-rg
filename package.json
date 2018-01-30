@@ -2,7 +2,6 @@
   "repository": "https://github.com/cosmicexplorer/f3",
   "license": "GPL-3.0+",
   "dependencies": {
-    "markdown": "^0.5.0",
     "wordwrap": "^1.0.0"
   }
 }

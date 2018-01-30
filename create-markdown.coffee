@@ -1,7 +1,6 @@
 #!/usr/bin/env coffee
 
 fs = require 'fs'
-{markdown} = require 'markdown'
 wordwrap = require 'wordwrap'
 
 processReadme = (readme) ->
@@ -13,7 +12,7 @@ processReadme = (readme) ->
     .replace(/^ +/mg, (all) -> all.replace(/ /g, '='))
   wordwrap(77, {mode: 'soft'})(processed)
     .replace(///^=+///mg, (all) -> all.replace(///=///g, ' '))
-    .replace(///^#(.*)$///mg, (all, g1) -> ";=\n;;#{g1}:")
+    .replace(///^#+(.*)$///mg, (all, g1) -> ";=\n;;#{g1}:")
     .replace(///^$///mg, ';=')
     .replace(///^([^;])///mg, (all, g1) -> ";; #{g1}")
     .replace(///^;=///mg, '')
