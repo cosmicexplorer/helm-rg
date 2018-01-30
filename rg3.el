@@ -15,7 +15,7 @@
 ;; Author: Danny McClanahan
 ;; Version: 0.1
 ;; URL: https://github.com/cosmicexplorer/rg3
-;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5"))
+;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5") (dash "2.13.0"))
 ;; Keywords: find, file, files, helm, fast, rg, ripgrep, grep, search
 
 
@@ -64,6 +64,7 @@
 
 (require 'ansi-color)
 (require 'cl-lib)
+(require 'dash)
 (require 'helm)
 (require 'helm-lib)
 (require 'rx)
@@ -281,20 +282,16 @@ The match is highlighted in its buffer."
         (forward-line line-no)
         (let* ((line-olay
                 (rg3--make-overlay-with-face
-                 (line-beginning-position)
-                 (line-end-position)
+                 (line-beginning-position) (line-end-position)
                  'rg3-preview-line-highlight))
                (match-olays
-                (cl-loop
-                 for el in olay-cols
-                 collect (cl-destructuring-bind (&key beg end) el
-                           (let* ((pt (point))
-                                  (pt-beg (+ pt beg))
-                                  (pt-end (+ pt end)))
-                             (rg3--make-overlay-with-face
-                              pt-beg pt-end 'rg3-preview-match-highlight))))))
+                (-map (-lambda ((&plist :beg beg :end end))
+                        (rg3--make-overlay-with-face
+                         (+ (point) beg) (+ (point) end)
+                         'rg3-preview-match-highlight))
+                      olay-cols)))
           (setq rg3--current-overlays
-                (append (list line-olay) match-olays)))
+                (cons line-olay match-olays)))
         (forward-char col-no)
         (recenter)))))
 
