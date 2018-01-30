@@ -73,41 +73,41 @@
 
 
 ;; Customization
-(defgroup rg3 nil
-  "???"
+(defgroup rg3 nil "Group for `rg3' customizations."
   :group 'helm)
 
 (defcustom rg3-base-command '("rg" "--vimgrep" "--color=always")
-  "???"
+  "The beginning of the command line to invoke ripgrep, as a list."
   :type 'list
   :safe #'rg3--always-safe-local
   :group 'rg3)
 
 (defcustom rg3-candidate-limit 2000
-  "???"
+  "The number of lines of output to show at once when running `rg3'."
   :type 'integer
   :safe #'rg3--always-safe-local
   :group 'rg3)
 
 (defcustom rg3-default-glob-string ""
-  "???"
+  "The glob pattern used for the '-g' argument to ripgrep. Blank to match every
+file."
   :type 'string
   :safe #'rg3--always-safe-local
   :group 'rg3)
 
 (defcustom rg3-thing-at-point 'symbol
-  "???"
+  "Type of object at point to initialize the `rg3' minibuffer input with."
   :type 'symbol
   :group 'rg3)
 
 (defface rg3-preview-line-highlight
   '((t (:background "green" :foreground "black")))
-  "???"
+  "Face for the line of text matched by the ripgrep process."
   :group 'rg3)
 
 (defface rg3-preview-match-highlight
   '((t (:background "purple" :foreground "white")))
-  "???"
+  "Face of the text matched by the pattern given to the ripgrep process."
   :group 'rg3)
 
 
@@ -359,7 +359,7 @@
     (define-key map (kbd "M-g") #'rg3--set-glob)
     (define-key map (kbd "M-d") #'rg3--set-dir)
     map)
-  "???")
+  "Keymap for `rg3'.")
 
 
 ;; Helm sources
@@ -370,13 +370,14 @@
     :action (helm-make-actions "Visit" #'rg3--async-action)
     :filter-one-by-one #'rg3--ansi-color
     :persistent-action #'rg3--async-persistent-action
-    :keymap 'rg3-map))
+    :keymap 'rg3-map)
+  "Helm async source to search files in a directory using ripgrep.")
 
 
 ;; Autoloaded functions
 ;;;###autoload
 (defun rg3 (rg-pattern)
-  "???
+  "Search for a pattern in a directory extremely quickly with ripgrep.
 
 \\{rg3-map}"
   (interactive (list (rg3--get-thing-at-pt)))
