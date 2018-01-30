@@ -378,7 +378,7 @@ file."
 ;; Autoloaded functions
 ;;;###autoload
 (defun rg3 (rg-pattern)
-  "Search for a pattern in a directory extremely quickly with ripgrep.
+  "Search for the perl regexp RG-PATTERN extremely quickly with ripgrep.
 
 \\{rg3-map}"
   (interactive (list (rg3--get-thing-at-pt)))
