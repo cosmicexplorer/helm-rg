@@ -132,10 +132,12 @@ Set to the empty string to match every file."
          (group (+ (any digit)))
          ":"
          (group (* nonl))
-         eol)))
+         eol))
+  "Regexp matching the output of invoking ripgrep with the '--vimgrep' option.")
 
 (defconst rg3--case-insensitive-pattern-regexp
-  (rx (: bos (* (not upper)) eos)))
+  (rx (: bos (* (not upper)) eos))
+  "Regexp matching an search which should be interpreted case-insensitively.")
 
 
 ;; Variables
