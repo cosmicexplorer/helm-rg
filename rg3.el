@@ -35,21 +35,21 @@
 
 ;; - Invoke the interactive function `rg3' to start a search with `ripgrep' in
 ;; the current directory.
-;; - `helm' is used to browse the results and update the output as you
+;;     - `helm' is used to browse the results and update the output as you
 ;; type.
-;; - Each line has the file path, the line number, and the column number of the
-;; start of the match, and each part is highlighted differently.
-;; - Use 'TAB' to invoke the helm persistent action, which previews the result
-;; and highlights the matched text in the preview.
-;; - Use 'RET' to visit the file containing the result, move point to the start
-;; of the match, and recenter.
+;;     - Each line has the file path, the line number, and the column number of
+;; the start of the match, and each part is highlighted differently.
+;;     - Use 'TAB' to invoke the helm persistent action, which previews the
+;; result and highlights the matched text in the preview.
+;;     - Use 'RET' to visit the file containing the result, move point to the
+;; start of the match, and recenter.
 ;; - The text entered into the minibuffer is interpreted as a PCRE regexp which
 ;; `ripgrep' uses to search your files.
 ;; - Use 'M-d' to select a new directory to search from.
 ;; - Use 'M-g' to input a glob pattern to filter files by, e.g. `*.py'.
-;; - The glob pattern defaults to the value of `rg3-default-glob-string', which
-;; is an empty string (matches every file) unless you customize it.
-;; - Pressing 'M-g' again shows the same minibuffer prompt for the glob
+;;     - The glob pattern defaults to the value of `rg3-default-glob-string',
+;; which is an empty string (matches every file) unless you customize it.
+;;     - Pressing 'M-g' again shows the same minibuffer prompt for the glob
 ;; pattern, with the string that was previously input.
 
 

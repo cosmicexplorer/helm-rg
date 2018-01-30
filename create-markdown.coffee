@@ -10,7 +10,9 @@ processReadme = (readme) ->
     .replace(/<kbd>(.*?)<\/kbd>/g, (all, g1) -> "'#{g1}'")
     .replace(///\[([^\]]+)\]\([^\)]+\)///g, (all, g1) -> g1)
     .replace(///`([^`]+)`///g, (all, g1) -> "`#{g1}'")
+    .replace(/^ +/mg, (all) -> all.replace(/ /g, '='))
   wordwrap(77, {mode: 'soft'})(processed)
+    .replace(///^=+///mg, (all) -> all.replace(///=///g, ' '))
     .replace(///^#(.*)$///mg, (all, g1) -> ";=\n;;#{g1}:")
     .replace(///^$///mg, ';=')
     .replace(///^([^;])///mg, (all, g1) -> ";; #{g1}")
