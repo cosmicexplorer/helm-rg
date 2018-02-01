@@ -105,6 +105,11 @@ Set to the empty string to match every file."
   :type 'symbol
   :group 'rg3)
 
+(defcustom rg3--display-buffer-default-method #'switch-to-buffer
+  "The function to use to display each visited buffer in some window."
+  :type 'function
+  :group 'rg3)
+
 (defface rg3-preview-line-highlight
   '((t (:background "green" :foreground "black")))
   "Face for the line of text matched by the ripgrep process."
@@ -140,6 +145,9 @@ Set to the empty string to match every file."
   (rx (: bos (* (not upper)) eos))
   "Regexp matching an search which should be interpreted case-insensitively.")
 
+(defconst rg3--alternate-display-buffer-method #'pop-to-buffer
+  "A function accepting a single argument BUF and displaying the buffer.")
+
 
 ;; Variables
 (defvar rg3--append-persistent-buffers nil
@@ -159,6 +167,10 @@ Set to the empty string to match every file."
 
 (defvar rg3--glob-string-history nil
   "History variable for the selection of `rg3--glob-string'.")
+
+(defvar rg3--display-buffer-method nil
+  "The method to use to display a buffer visiting a result.
+Should accept one argument BUF, the buffer to display.")
 
 
 ;; Logic
@@ -277,7 +289,7 @@ The match is highlighted in its buffer."
               (rg3--get-overlay-columns
                (rg3--pcre-to-elisp-regexp helm-pattern)
                content)))
-        (pop-to-buffer buffer-to-display)
+        (funcall rg3--display-buffer-method buffer-to-display)
         (goto-char (point-min))
         (forward-line line-no)
         (let* ((line-olay
@@ -394,13 +406,16 @@ Call `rg3--async-action', but push the buffer corresponding to CAND to
 
 ;; Autoloaded functions
 ;;;###autoload
-(defun rg3 (rg-pattern)
+(defun rg3 (rg-pattern  &optional pfx)
   "Search for the perl regexp RG-PATTERN extremely quickly with ripgrep.
 
 \\{rg3-map}"
-  (interactive (list (rg3--get-thing-at-pt)))
+  (interactive (list (rg3--get-thing-at-pt) current-prefix-arg))
   (let* ((rg3--current-dir (or rg3--current-dir default-directory))
-         (rg3--glob-string (or rg3--glob-string rg3-default-glob-string)))
+         (rg3--glob-string (or rg3--glob-string rg3-default-glob-string))
+         (rg3--display-buffer-method
+          (if pfx rg3--alternate-display-buffer-method
+            rg3--display-buffer-default-method)))
     (unwind-protect (rg3--do-rg3 rg-pattern)
       (rg3--unwind-cleanup))))
 
