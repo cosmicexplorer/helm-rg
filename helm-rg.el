@@ -354,7 +354,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 (defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
-  (helm :sources '(helm-rg--process-source)
+  (helm :sources '(helm-rg-process-source)
         :buffer helm-rg--helm-buffer-name
         :input rg-pattern
         :prompt "rg pattern: "))
