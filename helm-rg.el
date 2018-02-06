@@ -1,4 +1,4 @@
-;;; rg3.el --- a helm interface to ripgrep -*- lexical-binding: t -*-
+;;; helm-rg.el --- a helm interface to ripgrep -*- lexical-binding: t -*-
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation; either version 3, or (at your option)
@@ -14,7 +14,7 @@
 
 ;; Author: Danny McClanahan
 ;; Version: 0.1
-;; URL: https://github.com/cosmicexplorer/rg3
+;; URL: https://github.com/cosmicexplorer/helm-rg
 ;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5") (dash "2.13.0"))
 ;; Keywords: find, file, files, helm, fast, rg, ripgrep, grep, search
 
@@ -22,7 +22,7 @@
 ;;; Commentary:
 
 ;; The below is generated from a README at
-;; https://github.com/cosmicexplorer/rg3.
+;; https://github.com/cosmicexplorer/helm-rg.
 
 ;; RipGrep Goes Great with Emacs. Search directories fast, using `ripgrep' and
 ;; `helm'. Inspired by `helm-ag' and `f3'.
@@ -33,8 +33,8 @@
 ;; *See the `ripgrep' whirlwind tour for further information on invoking
 ;; `ripgrep'.*
 
-;; - Invoke the interactive function `rg3' to start a search with `ripgrep' in
-;; the current directory.
+;; - Invoke the interactive function `helm-rg' to start a search with `ripgrep'
+;; in the current directory.
 ;;     - `helm' is used to browse the results and update the output as you
 ;; type.
 ;;     - Each line has the file path, the line number, and the column number of
@@ -47,8 +47,9 @@
 ;; `ripgrep' uses to search your files.
 ;; - Use 'M-d' to select a new directory to search from.
 ;; - Use 'M-g' to input a glob pattern to filter files by, e.g. `*.py'.
-;;     - The glob pattern defaults to the value of `rg3-default-glob-string',
-;; which is an empty string (matches every file) unless you customize it.
+;;     - The glob pattern defaults to the value of
+;; `helm-rg-default-glob-string', which is an empty string (matches every file)
+;; unless you customize it.
 ;;     - Pressing 'M-g' again shows the same minibuffer prompt for the glob
 ;; pattern, with the string that was previously input.
 
@@ -71,65 +72,65 @@
 
 
 ;; Helpers
-(defun rg3--always-safe-local (_)
+(defun helm-rg--always-safe-local (_)
   "Use as a :safe predicate in a `defcustom' form to accept any local override."
   t)
 
 
 ;; Customization
-(defgroup rg3 nil
-  "Group for `rg3' customizations."
+(defgroup helm-rg nil
+  "Group for `helm-rg' customizations."
   :group 'files)
 
-(defcustom rg3-base-command '("rg" "--vimgrep" "--color=always")
+(defcustom helm-rg-base-command '("rg" "--vimgrep" "--color=always")
   "The beginning of the command line to invoke ripgrep, as a list."
   :type 'list
-  :safe #'rg3--always-safe-local
-  :group 'rg3)
+  :safe #'helm-rg--always-safe-local
+  :group 'helm-rg)
 
-(defcustom rg3-candidate-limit 2000
-  "The number of lines of output to show at once when running `rg3'."
+(defcustom helm-rg-candidate-limit 2000
+  "The number of lines of output to show at once when running `helm-rg'."
   :type 'integer
-  :safe #'rg3--always-safe-local
-  :group 'rg3)
+  :safe #'helm-rg--always-safe-local
+  :group 'helm-rg)
 
-(defcustom rg3-default-glob-string ""
+(defcustom helm-rg-default-glob-string ""
   "The glob pattern used for the '-g' argument to ripgrep.
 Set to the empty string to match every file."
   :type 'string
-  :safe #'rg3--always-safe-local
-  :group 'rg3)
+  :safe #'helm-rg--always-safe-local
+  :group 'helm-rg)
 
-(defcustom rg3-thing-at-point 'symbol
-  "Type of object at point to initialize the `rg3' minibuffer input with."
+(defcustom helm-rg-thing-at-point 'symbol
+  "Type of object at point to initialize the `helm-rg' minibuffer input with."
   :type 'symbol
-  :group 'rg3)
+  :group 'helm-rg)
 
-(defcustom rg3--display-buffer-default-method #'switch-to-buffer
+(defcustom helm-rg--display-buffer-default-method #'switch-to-buffer
   "The function to use to display each visited buffer in some window."
   :type 'function
-  :group 'rg3)
+  :group 'helm-rg)
 
-(defface rg3-preview-line-highlight
+(defface helm-rg-preview-line-highlight
   '((t (:background "green" :foreground "black")))
   "Face for the line of text matched by the ripgrep process."
-  :group 'rg3)
+  :group 'helm-rg)
 
-(defface rg3-preview-match-highlight
+(defface helm-rg-preview-match-highlight
   '((t (:background "purple" :foreground "white")))
   "Face of the text matched by the pattern given to the ripgrep process."
-  :group 'rg3)
+  :group 'helm-rg)
 
 
 ;; Constants
-(defconst rg3--helm-buffer-name "*rg3*")
-(defconst rg3--process-name "*rg3--rg*")
-(defconst rg3--process-buffer-name "*rg3--rg-output*")
+(defconst helm-rg--helm-buffer-name "*helm-rg*")
+(defconst helm-rg--process-name "*helm-rg--rg*")
+(defconst helm-rg--process-buffer-name "*helm-rg--rg-output*")
 
-(defconst rg3--error-process-name "*rg3--error-process*")
-(defconst rg3--error-buffer-name "*rg3--errors*")
+(defconst helm-rg--error-process-name "*helm-rg--error-process*")
+(defconst helm-rg--error-buffer-name "*helm-rg--errors*")
 
-(defconst rg3--vimgrep-output-line-regexp
+(defconst helm-rg--vimgrep-output-line-regexp
   (rx (: bol
          (group (+ (not (any ?:))))
          ":"
@@ -141,84 +142,84 @@ Set to the empty string to match every file."
          eol))
   "Regexp matching the output of invoking ripgrep with the '--vimgrep' option.")
 
-(defconst rg3--case-insensitive-pattern-regexp
+(defconst helm-rg--case-insensitive-pattern-regexp
   (rx (: bos (* (not upper)) eos))
   "Regexp matching an search which should be interpreted case-insensitively.")
 
-(defconst rg3--alternate-display-buffer-method #'pop-to-buffer
+(defconst helm-rg--alternate-display-buffer-method #'pop-to-buffer
   "A function accepting a single argument BUF and displaying the buffer.")
 
 
 ;; Variables
-(defvar rg3--append-persistent-buffers nil
-  "Whether to record buffers opened during an `rg3' session.")
+(defvar helm-rg--append-persistent-buffers nil
+  "Whether to record buffers opened during an `helm-rg' session.")
 
-(defvar rg3--currently-opened-persistent-buffers nil
-  "List of buffers opened temporarily during an `rg3' session.")
+(defvar helm-rg--cur-persistent-bufs nil
+  "List of buffers opened temporarily during an `helm-rg' session.")
 
-(defvar rg3--current-overlays nil
-  "List of overlays used to highlight matches in `rg3'.")
+(defvar helm-rg--current-overlays nil
+  "List of overlays used to highlight matches in `helm-rg'.")
 
-(defvar rg3--current-dir nil
-  "Working directory for the current `rg3' session.")
+(defvar helm-rg--current-dir nil
+  "Working directory for the current `helm-rg' session.")
 
-(defvar rg3--glob-string nil
-  "Glob string used for the current `rg3' session.")
+(defvar helm-rg--glob-string nil
+  "Glob string used for the current `helm-rg' session.")
 
-(defvar rg3--glob-string-history nil
-  "History variable for the selection of `rg3--glob-string'.")
+(defvar helm-rg--glob-string-history nil
+  "History variable for the selection of `helm-rg--glob-string'.")
 
-(defvar rg3--display-buffer-method nil
+(defvar helm-rg--display-buffer-method nil
   "The method to use to display a buffer visiting a result.
 Should accept one argument BUF, the buffer to display.")
 
 
 ;; Logic
-(defun rg3--make-dummy-process ()
+(defun helm-rg--make-dummy-process ()
   "Make a process that immediately exits to display just a title."
   (let* ((dummy-proc (make-process
-                      :name rg3--process-name
-                      :buffer rg3--process-buffer-name
+                      :name helm-rg--process-name
+                      :buffer helm-rg--process-buffer-name
                       :command '("echo")
                       :noquery t))
          (helm-src-name
           (format "rg empty dummy process (no output) @ %s"
-                  rg3--current-dir)))
+                  helm-rg--current-dir)))
     (helm-attrset 'name helm-src-name)
     dummy-proc))
 
-(defun rg3--make-process ()
-  "Invoke ripgrep in `rg3--current-dir' with `helm-pattern'."
-  (let ((default-directory rg3--current-dir))
+(defun helm-rg--make-process ()
+  "Invoke ripgrep in `helm-rg--current-dir' with `helm-pattern'."
+  (let ((default-directory helm-rg--current-dir))
     (if (string= "" helm-pattern)
-        (rg3--make-dummy-process)
+        (helm-rg--make-dummy-process)
       (let* ((case-insensitive-p
               (let ((case-fold-search nil))
                 (string-match-p
-                 rg3--case-insensitive-pattern-regexp helm-pattern)))
+                 helm-rg--case-insensitive-pattern-regexp helm-pattern)))
              (rg-cmd
               (append
-               rg3-base-command
-               (list "-g" rg3--glob-string)
+               helm-rg-base-command
+               (list "-g" helm-rg--glob-string)
                (if case-insensitive-p '("-i") ())
                (list helm-pattern)))
              (real-proc (make-process
-                         :name rg3--process-name
-                         :buffer rg3--process-buffer-name
+                         :name helm-rg--process-name
+                         :buffer helm-rg--process-buffer-name
                          :command rg-cmd
                          :noquery t))
              (helm-src-name
               (format "rg cmd: '%s' @ %s"
                       (mapconcat (lambda (s) (format "'%s'" s))
                                  rg-cmd " ")
-                      rg3--current-dir)))
+                      helm-rg--current-dir)))
         (helm-attrset 'name helm-src-name)
         (set-process-query-on-exit-flag real-proc nil)
         real-proc))))
 
-(defun rg3--decompose-vimgrep-output-line (line)
+(defun helm-rg--decompose-vimgrep-output-line (line)
   "Parse LINE into its constituent elements, returning a plist."
-  (when (string-match rg3--vimgrep-output-line-regexp line)
+  (when (string-match helm-rg--vimgrep-output-line-regexp line)
     (let ((matches (cl-mapcar (lambda (ind) (match-string ind line))
                               (number-sequence 1 4))))
       (cl-destructuring-bind (file-path line-no col-no content) matches
@@ -228,7 +229,7 @@ Should accept one argument BUF, the buffer to display.")
          :col-no (1- (string-to-number col-no))
          :content content)))))
 
-(defun rg3--pcre-to-elisp-regexp (pcre)
+(defun helm-rg--pcre-to-elisp-regexp (pcre)
   "Convert the string PCRE to an Emacs Lisp regexp."
   (with-temp-buffer
     (insert pcre)
@@ -249,18 +250,18 @@ Should accept one argument BUF, the buffer to display.")
         (insert "-")))
     (buffer-string)))
 
-(defun rg3--make-overlay-with-face (beg end face)
+(defun helm-rg--make-overlay-with-face (beg end face)
   "Generate an overlay in region BEG to END with face FACE."
   (let ((olay (make-overlay beg end)))
     (overlay-put olay 'face face)
     olay))
 
-(defun rg3--delete-overlays ()
-  "Delete all cached overlays in `rg3--current-overlays', and clear it."
-  (cl-mapc #'delete-overlay rg3--current-overlays)
-  (setq rg3--current-overlays nil))
+(defun helm-rg--delete-overlays ()
+  "Delete all cached overlays in `helm-rg--current-overlays', and clear it."
+  (cl-mapc #'delete-overlay helm-rg--current-overlays)
+  (setq helm-rg--current-overlays nil))
 
-(defun rg3--get-overlay-columns (elisp-regexp content)
+(defun helm-rg--get-overlay-columns (elisp-regexp content)
   "Find regions matching ELISP-REGEXP in the string CONTENT."
   (with-temp-buffer
     (insert content)
@@ -270,57 +271,57 @@ Should accept one argument BUF, the buffer to display.")
      for (beg end) = (match-data t)
      collect (list :beg (1- beg) :end (1- end)))))
 
-(defun rg3--async-action (cand)
+(defun helm-rg--async-action (cand)
   "Visit the file at the line and column specified by CAND.
 The match is highlighted in its buffer."
-  (let ((default-directory rg3--current-dir))
-    (rg3--delete-overlays)
+  (let ((default-directory helm-rg--current-dir))
+    (helm-rg--delete-overlays)
     (cl-destructuring-bind (&key file-path line-no col-no content)
-        (rg3--decompose-vimgrep-output-line cand)
+        (helm-rg--decompose-vimgrep-output-line cand)
       (let* ((file-abs-path
               (expand-file-name file-path))
              (buffer-to-display
               (or (find-buffer-visiting file-abs-path)
                   (let ((new-buf (find-file-noselect file-abs-path)))
-                    (when rg3--append-persistent-buffers
-                      (push new-buf rg3--currently-opened-persistent-buffers))
+                    (when helm-rg--append-persistent-buffers
+                      (push new-buf helm-rg--cur-persistent-bufs))
                     new-buf)))
              (olay-cols
-              (rg3--get-overlay-columns
-               (rg3--pcre-to-elisp-regexp helm-pattern)
+              (helm-rg--get-overlay-columns
+               (helm-rg--pcre-to-elisp-regexp helm-pattern)
                content)))
-        (funcall rg3--display-buffer-method buffer-to-display)
+        (funcall helm-rg--display-buffer-method buffer-to-display)
         (goto-char (point-min))
         (forward-line line-no)
         (let* ((line-olay
-                (rg3--make-overlay-with-face
+                (helm-rg--make-overlay-with-face
                  (line-beginning-position) (line-end-position)
-                 'rg3-preview-line-highlight))
+                 'helm-rg-preview-line-highlight))
                (match-olays
                 (-map (-lambda ((&plist :beg beg :end end))
-                        (rg3--make-overlay-with-face
+                        (helm-rg--make-overlay-with-face
                          (+ (point) beg) (+ (point) end)
-                         'rg3-preview-match-highlight))
+                         'helm-rg-preview-match-highlight))
                       olay-cols)))
-          (setq rg3--current-overlays
+          (setq helm-rg--current-overlays
                 (cons line-olay match-olays)))
         (forward-char col-no)
         (recenter)))))
 
-(defun rg3--async-persistent-action (cand)
+(defun helm-rg--async-persistent-action (cand)
   "Visit the file at the line and column specified by CAND.
-Call `rg3--async-action', but push the buffer corresponding to CAND to
-`rg3--current-overlays', if there was no buffer visiting it already."
-  (let ((rg3--append-persistent-buffers t))
-    (rg3--async-action cand)))
+Call `helm-rg--async-action', but push the buffer corresponding to CAND to
+`helm-rg--current-overlays', if there was no buffer visiting it already."
+  (let ((helm-rg--append-persistent-buffers t))
+    (helm-rg--async-action cand)))
 
-(defun rg3--kill-proc-if-live (proc-name)
+(defun helm-rg--kill-proc-if-live (proc-name)
   "Delete the process named PROC-NAME, if it is alive."
   (let ((proc (get-process proc-name)))
     (when (process-live-p proc)
       (delete-process proc))))
 
-(defun rg3--kill-bufs-if-live (&rest bufs)
+(defun helm-rg--kill-bufs-if-live (&rest bufs)
   "Kill any live buffers in BUFS."
   (cl-mapc
    (lambda (buf)
@@ -328,96 +329,98 @@ Call `rg3--async-action', but push the buffer corresponding to CAND to
        (kill-buffer buf)))
    bufs))
 
-(defun rg3--unwind-cleanup ()
+(defun helm-rg--unwind-cleanup ()
   "Reset all the temporary state in `defvar's in this package."
-  (rg3--delete-overlays)
+  (helm-rg--delete-overlays)
   (cl-loop
-   for opened-buf in rg3--currently-opened-persistent-buffers
+   for opened-buf in helm-rg--cur-persistent-bufs
    unless (eq (current-buffer) opened-buf)
    do (kill-buffer opened-buf)
-   finally (setq rg3--currently-opened-persistent-buffers nil))
-  (rg3--kill-proc-if-live rg3--process-name)
-  (rg3--kill-bufs-if-live rg3--helm-buffer-name
-                          rg3--process-buffer-name
-                          rg3--error-buffer-name))
+   finally (setq helm-rg--cur-persistent-bufs nil))
+  (helm-rg--kill-proc-if-live helm-rg--process-name)
+  (helm-rg--kill-bufs-if-live helm-rg--helm-buffer-name
+                          helm-rg--process-buffer-name
+                          helm-rg--error-buffer-name))
 
-(defun rg3--do-rg3 (rg-pattern)
+(defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
-  (helm :sources '(rg3--process-source)
-        :buffer rg3--helm-buffer-name
+  (helm :sources '(helm-rg--process-source)
+        :buffer helm-rg--helm-buffer-name
         :input rg-pattern
         :prompt "rg pattern: "))
 
-(defun rg3--get-thing-at-pt ()
+(defun helm-rg--get-thing-at-pt ()
   "Get the object surrounding point, or the empty string."
-  (helm-aif (thing-at-point rg3-thing-at-point)
+  (helm-aif (thing-at-point helm-rg-thing-at-point)
       (substring-no-properties it)
     ""))
 
 
 ;; Toggles and settings
-(defmacro rg3--run-after-exit (&rest body)
+(defmacro helm-rg--run-after-exit (&rest body)
   "Wrap BODY in `helm-run-after-exit'."
   `(helm-run-after-exit (lambda () ,@body)))
 
-(defun rg3--set-glob ()
+(defun helm-rg--set-glob ()
   "Set the glob string used to invoke ripgrep and search again."
   (interactive)
   (let* ((pat helm-pattern)
-         (start-dir rg3--current-dir))
-    (rg3--run-after-exit
-     (let ((rg3--current-dir start-dir)
-           (rg3--glob-string
+         (start-dir helm-rg--current-dir))
+    (helm-rg--run-after-exit
+     (let ((helm-rg--current-dir start-dir)
+           (helm-rg--glob-string
             (read-string
-             "rg glob: " rg3--glob-string 'rg3--glob-string-history)))
-       (rg3--do-rg3 pat)))))
+             "rg glob: " helm-rg--glob-string 'helm-rg--glob-string-history)))
+       (helm-rg--do-helm-rg pat)))))
 
-(defun rg3--set-dir ()
+(defun helm-rg--set-dir ()
   "Set the directory in which to invoke ripgrep and search again."
   (interactive)
   (let ((pat helm-pattern))
-    (rg3--run-after-exit
-     (let ((rg3--current-dir
-            (read-directory-name "rg directory: " rg3--current-dir nil t)))
-       (rg3--do-rg3 pat)))))
+    (helm-rg--run-after-exit
+     (let ((helm-rg--current-dir
+            (read-directory-name "rg directory: " helm-rg--current-dir nil t)))
+       (helm-rg--do-helm-rg pat)))))
 
 
 ;; Keymap
-(defconst rg3-map
+(defconst helm-rg-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
-    (define-key map (kbd "M-g") #'rg3--set-glob)
-    (define-key map (kbd "M-d") #'rg3--set-dir)
+    (define-key map (kbd "M-g") #'helm-rg--set-glob)
+    (define-key map (kbd "M-d") #'helm-rg--set-dir)
     map)
-  "Keymap for `rg3'.")
+  "Keymap for `helm-rg'.")
 
 
 ;; Helm sources
-(defconst rg3--process-source
+(defconst helm-rg--process-source
   (helm-build-async-source "ripgrep"
-    :candidates-process #'rg3--make-process
-    :candidate-number-limit rg3-candidate-limit
-    :action (helm-make-actions "Visit" #'rg3--async-action)
+    :candidates-process #'helm-rg--make-process
+    :candidate-number-limit helm-rg-candidate-limit
+    :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'ansi-color-apply
-    :persistent-action #'rg3--async-persistent-action
-    :keymap 'rg3-map)
+    :persistent-action #'helm-rg--async-persistent-action
+    :keymap 'helm-rg-map)
   "Helm async source to search files in a directory using ripgrep.")
 
 
 ;; Autoloaded functions
 ;;;###autoload
-(defun rg3 (rg-pattern  &optional pfx)
+(defun helm-rg (rg-pattern &optional pfx)
   "Search for the perl regexp RG-PATTERN extremely quickly with ripgrep.
 
-\\{rg3-map}"
-  (interactive (list (rg3--get-thing-at-pt) current-prefix-arg))
-  (let* ((rg3--current-dir (or rg3--current-dir default-directory))
-         (rg3--glob-string (or rg3--glob-string rg3-default-glob-string))
-         (rg3--display-buffer-method
-          (if pfx rg3--alternate-display-buffer-method
-            rg3--display-buffer-default-method)))
-    (unwind-protect (rg3--do-rg3 rg-pattern)
-      (rg3--unwind-cleanup))))
+\\{helm-rg-map}"
+  (interactive (list (helm-rg--get-thing-at-pt) current-prefix-arg))
+  (let* ((helm-rg--current-dir (or helm-rg--current-dir
+                                   default-directory))
+         (helm-rg--glob-string (or helm-rg--glob-string
+                                   helm-rg-default-glob-string))
+         (helm-rg--display-buffer-method
+          (if pfx helm-rg--alternate-display-buffer-method
+            helm-rg--display-buffer-default-method)))
+    (unwind-protect (helm-rg--do-helm-rg rg-pattern)
+      (helm-rg--unwind-cleanup))))
 
-(provide 'rg3)
-;;; rg3.el ends here
+(provide 'helm-rg)
+;;; helm-rg.el ends here

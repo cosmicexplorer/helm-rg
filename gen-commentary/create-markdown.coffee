@@ -17,13 +17,13 @@ processReadme = (readme) ->
     .replace(///^([^;])///mg, (all, g1) -> ";; #{g1}")
     .replace(///^;=///mg, '')
 
-link = "https://github.com/cosmicexplorer/rg3"
+link = "https://github.com/cosmicexplorer/helm-rg"
 header = ";; The below is generated from a README at\n;; #{link}.\n"
 
-readme = fs.readFileSync("#{__dirname}/README.md").toString()
-rg3El = fs.readFileSync("#{__dirname}/rg3.el").toString()
+readme = fs.readFileSync("#{__dirname}/../README.md").toString()
+helmRgEl = fs.readFileSync("#{__dirname}/../helm-rg.el").toString()
 
-output = rg3El.replace(/(;;; Commentary:)\n(;; End Commentary)/g, (all, g1, g2) ->
+output = helmRgEl.replace(/(;;; Commentary:)\n(;; End Commentary)/g, (all, g1, g2) ->
     "#{g1}\n\n#{header}#{processReadme(readme)}\n#{g2}")
 
-fs.writeFileSync "#{__dirname}/rg3.el", output
+fs.writeFileSync "#{__dirname}/../helm-rg.el", output
