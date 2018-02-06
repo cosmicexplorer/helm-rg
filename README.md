@@ -18,6 +18,12 @@ RipGrep Goes Great with Emacs. Search directories fast, using [`ripgrep`](https:
     - The glob pattern defaults to the value of `helm-rg-default-glob-string`, which is an empty string (matches every file) unless you customize it.
     - Pressing <kbd>M-g</kbd> again shows the same minibuffer prompt for the glob pattern, with the string that was previously input.
 
+# TODO
+
+- make a keybinding to move by files (go to next file of results)
+    - also one to move by containing directory
+- make a keybinding to drop into an edit mode and edit file content inline in results like [helm-ag](https://github.com/syohex/emacs-helm-ag)
+
 # License
 
 [GPL 3.0+](./LICENSE)

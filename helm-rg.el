@@ -54,6 +54,14 @@
 ;; pattern, with the string that was previously input.
 
 
+;; TODO:
+
+;; - make a keybinding to move by files (go to next file of results)
+;;     - also one to move by containing directory
+;; - make a keybinding to drop into an edit mode and edit file content inline
+;; in results like helm-ag
+
+
 ;; License:
 
 ;; GPL 3.0+
