@@ -24,8 +24,8 @@
 ;; The below is generated from a README at
 ;; https://github.com/cosmicexplorer/helm-rg.
 
-;; RipGrep Goes Great with Emacs. Search directories fast, using `ripgrep' and
-;; `helm'. Inspired by `helm-ag' and `f3'.
+;; Search massive codebases extremely fast, using `ripgrep' and `helm'.
+;; Inspired by `helm-ag' and `f3'.
 
 ;; Also check out rg.el, which I haven't used much but seems pretty cool.
 
