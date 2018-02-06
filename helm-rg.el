@@ -268,7 +268,7 @@ Should accept one argument BUF, the buffer to display.")
 
 (defun helm-rg--delete-overlays ()
   "Delete all cached overlays in `helm-rg--current-overlays', and clear it."
-  (cl-mapc #'delete-overlay helm-rg--current-overlays)
+  (mapc #'delete-overlay helm-rg--current-overlays)
   (setq helm-rg--current-overlays nil))
 
 (defun helm-rg--get-overlay-columns (elisp-regexp content)
@@ -333,7 +333,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 (defun helm-rg--kill-bufs-if-live (&rest bufs)
   "Kill any live buffers in BUFS."
-  (cl-mapc
+  (mapc
    (lambda (buf)
      (when (buffer-live-p (get-buffer buf))
        (kill-buffer buf)))
