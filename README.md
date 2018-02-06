@@ -3,6 +3,8 @@ helm-rg
 
 RipGrep Goes Great with Emacs. Search directories fast, using [`ripgrep`](https://github.com/BurntSushi/ripgrep) and [`helm`](https://github.com/emacs-helm/helm). Inspired by [`helm-ag`](https://github.com/syohex/emacs-helm-ag) and [`f3`](https://github.com/cosmicexplorer/f3).
 
+Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used much but seems pretty cool.
+
 # Usage
 
 *See the [`ripgrep` whirlwind tour](https://github.com/BurntSushi/ripgrep#whirlwind-tour) for further information on invoking `ripgrep`.*

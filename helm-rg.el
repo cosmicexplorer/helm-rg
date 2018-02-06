@@ -27,6 +27,8 @@
 ;; RipGrep Goes Great with Emacs. Search directories fast, using `ripgrep' and
 ;; `helm'. Inspired by `helm-ag' and `f3'.
 
+;; Also check out rg.el, which I haven't used much but seems pretty cool.
+
 
 ;; Usage:
 
@@ -402,7 +404,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 
 ;; Helm sources
-(defconst helm-rg--process-source
+(defconst helm-rg-process-source
   (helm-build-async-source "ripgrep"
     :candidates-process #'helm-rg--make-process
     :candidate-number-limit helm-rg-candidate-limit
