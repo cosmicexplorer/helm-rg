@@ -6,7 +6,7 @@ wordwrap = require 'wordwrap'
 processReadme = (readme) ->
   processed = readme
     .replace(///^[^=]+=+\n///, '')
-    .replace(/<kbd>(.*?)<\/kbd>/g, (all, g1) -> "'#{g1}'")
+    .replace(/<kbd>(.*?)<\/kbd>/g, (all, g1) -> "\x00#{g1}'")
     .replace(///\[!\[([^\]]+)\]\([^\)]+\)\]\(([^\)]+)\)///g,
              (all, g1, g2) -> "#{g1}: #{g2}")
     .replace(///\[([^\]]+)\]\(([^\)]+)\)///g, (all, g1, g2) -> "#{g1} (#{g2})")
@@ -18,6 +18,7 @@ processReadme = (readme) ->
     .replace(///^$///mg, ';=')
     .replace(///^([^;])///mg, (all, g1) -> ";; #{g1}")
     .replace(///^;=///mg, '')
+    .replace(/\x00/g, '`')
 
 link = "https://github.com/cosmicexplorer/helm-rg"
 header = ";; The below is generated from a README at\n;; #{link}.\n"
