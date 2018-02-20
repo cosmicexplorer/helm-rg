@@ -15,7 +15,7 @@
 ;; Author: Danny McClanahan
 ;; Version: 0.1
 ;; URL: https://github.com/cosmicexplorer/helm-rg
-;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5") (dash "2.13.0"))
+;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5") (dash "2.13.0") (pcre2el "1.0"))
 ;; Keywords: find, file, files, helm, fast, rg, ripgrep, grep, search
 
 
@@ -77,8 +77,11 @@
 (require 'cl-lib)
 (require 'dash)
 (require 'helm)
+(require 'helm-grep)
 (require 'helm-lib)
+(require 'pcre2el)
 (require 'rx)
+(require 'rxt)
 
 
 ;; Helpers
@@ -90,17 +93,12 @@
 ;; Customization
 (defgroup helm-rg nil
   "Group for `helm-rg' customizations."
-  :group 'files)
+  :group 'helm-grep)
 
-(defcustom helm-rg-base-command '("rg" "--vimgrep" "--color=always")
+(defcustom helm-rg-base-command
+  '("rg" "--vimgrep" "--color=always" "--smart-case")
   "The beginning of the command line to invoke ripgrep, as a list."
   :type 'list
-  :safe #'helm-rg--always-safe-local
-  :group 'helm-rg)
-
-(defcustom helm-rg-candidate-limit 2000
-  "The number of lines of output to show at once when running `helm-rg'."
-  :type 'integer
   :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
 
@@ -114,6 +112,14 @@ Set to the empty string to match every file."
 (defcustom helm-rg-thing-at-point 'symbol
   "Type of object at point to initialize the `helm-rg' minibuffer input with."
   :type 'symbol
+  :group 'helm-rg)
+
+(defcustom helm-rg-input-min-search-chars 3
+  "Ripgrep will not be invoked unless the input is at least this many chars.
+
+See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
+  :type 'integer
+  :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
 
 (defcustom helm-rg--display-buffer-default-method #'switch-to-buffer
@@ -152,10 +158,6 @@ Set to the empty string to match every file."
          eol))
   "Regexp matching the output of invoking ripgrep with the '--vimgrep' option.")
 
-(defconst helm-rg--case-insensitive-pattern-regexp
-  (rx (: bos (* (not upper)) eos))
-  "Regexp matching an search which should be interpreted case-insensitively.")
-
 (defconst helm-rg--alternate-display-buffer-method #'pop-to-buffer
   "A function accepting a single argument BUF and displaying the buffer.")
 
@@ -188,7 +190,7 @@ Should accept one argument BUF, the buffer to display.")
 
 
 ;; Logic
-(defun helm-rg--make-dummy-process ()
+(defun helm-rg--make-dummy-process (input)
   "Make a process that immediately exits to display just a title."
   (let* ((dummy-proc (make-process
                       :name helm-rg--process-name
@@ -196,25 +198,22 @@ Should accept one argument BUF, the buffer to display.")
                       :command '("echo")
                       :noquery t))
          (helm-src-name
-          (format "rg empty dummy process (no output) @ %s"
-                  helm-rg--current-dir)))
+          (format "no results (input '%s' must be at least %d characters)"
+                  input
+                  helm-rg-input-min-search-chars)))
     (helm-attrset 'name helm-src-name)
     dummy-proc))
 
 (defun helm-rg--make-process ()
   "Invoke ripgrep in `helm-rg--current-dir' with `helm-pattern'."
-  (let ((default-directory helm-rg--current-dir))
-    (if (string= "" helm-pattern)
-        (helm-rg--make-dummy-process)
-      (let* ((case-insensitive-p
-              (let ((case-fold-search nil))
-                (string-match-p
-                 helm-rg--case-insensitive-pattern-regexp helm-pattern)))
-             (rg-cmd
+  (let* ((default-directory helm-rg--current-dir)
+         (input helm-pattern))
+    (if (< (length input) helm-rg-input-min-search-chars)
+        (helm-rg--make-dummy-process input)
+      (let* ((rg-cmd
               (append
                helm-rg-base-command
                (list "-g" helm-rg--glob-string)
-               (if case-insensitive-p '("-i") ())
                (list helm-pattern)))
              (real-proc (make-process
                          :name helm-rg--process-name
@@ -222,10 +221,9 @@ Should accept one argument BUF, the buffer to display.")
                          :command rg-cmd
                          :noquery t))
              (helm-src-name
-              (format "rg cmd: '%s' @ %s"
+              (format "argv: (%s)"
                       (mapconcat (lambda (s) (format "'%s'" s))
-                                 rg-cmd " ")
-                      helm-rg--current-dir)))
+                                 rg-cmd " "))))
         (helm-attrset 'name helm-src-name)
         (set-process-query-on-exit-flag real-proc nil)
         real-proc))))
@@ -301,8 +299,7 @@ The match is highlighted in its buffer."
                     new-buf)))
              (olay-cols
               (helm-rg--get-overlay-columns
-               (helm-rg--pcre-to-elisp-regexp helm-pattern)
-               content)))
+               (rxt-pcre-to-elisp helm-pattern) content)))
         (funcall helm-rg--display-buffer-method buffer-to-display)
         (goto-char (point-min))
         (forward-line line-no)
@@ -360,14 +357,21 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
   (helm :sources '(helm-rg-process-source)
         :buffer helm-rg--helm-buffer-name
         :input rg-pattern
-        :prompt "rg pattern: "
-        :history 'helm-rg--helm-input-history))
+        :prompt "rg pattern: "))
 
 (defun helm-rg--get-thing-at-pt ()
   "Get the object surrounding point, or the empty string."
   (helm-aif (thing-at-point helm-rg-thing-at-point)
       (substring-no-properties it)
     ""))
+
+(defun helm-rg--helm-header-name (src-name)
+  (format "%s %s @ %s"
+          (propertize "rg" 'face 'bold-italic)
+          src-name
+          helm-rg--current-dir))
+
+(defun helm-rg--iterate-results ())
 
 
 ;; Toggles and settings
@@ -409,13 +413,18 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 ;; Helm sources
 (defconst helm-rg-process-source
-  (helm-build-async-source "ripgrep"
+  (helm-make-source "ripgrep" 'helm-grep-ag-class
+    :header-name #'helm-rg--helm-header-name
+    :keymap 'helm-rg-map
+    :history 'helm-rg--helm-input-history
+    :help-message "???"
     :candidates-process #'helm-rg--make-process
-    :candidate-number-limit helm-rg-candidate-limit
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'ansi-color-apply
     :persistent-action #'helm-rg--async-persistent-action
-    :keymap 'helm-rg-map)
+    :persistent-help "Visit result buffer and highlight matches"
+    :requires-pattern nil
+    :group 'helm-rg)
   "Helm async source to search files in a directory using ripgrep.")
 
 
