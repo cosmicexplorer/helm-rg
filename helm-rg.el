@@ -139,7 +139,7 @@ See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
 
 
 ;; Constants
-(defconst helm-rg--helm-buffer-name "*helm-rg*")
+(defconst helm-rg--buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
 (defconst helm-rg--process-buffer-name "*helm-rg--rg-output*")
 
@@ -161,6 +161,18 @@ See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
 (defconst helm-rg--alternate-display-buffer-method #'pop-to-buffer
   "A function accepting a single argument BUF and displaying the buffer.")
 
+(defconst helm-rg--loop-input-pattern-regexp
+  (rx
+   (:
+    (* (char ? ))
+    ;; group 1 = single entire element
+    (group
+     (+
+      (|
+       (not (in ? ))
+       (= 2 ? ))))))
+  "Regexp applied iteratively to split the input interpreted by `helm-rg'.")
+
 
 ;; Variables
 (defvar helm-rg--append-persistent-buffers nil
@@ -181,7 +193,7 @@ See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
 (defvar helm-rg--glob-string-history nil
   "History variable for the selection of `helm-rg--glob-string'.")
 
-(defvar helm-rg--helm-input-history nil
+(defvar helm-rg--input-history nil
   "History variable for the pattern input to the ripgrep process.")
 
 (defvar helm-rg--display-buffer-method nil
@@ -348,14 +360,14 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
    do (kill-buffer opened-buf)
    finally (setq helm-rg--cur-persistent-bufs nil))
   (helm-rg--kill-proc-if-live helm-rg--process-name)
-  (helm-rg--kill-bufs-if-live helm-rg--helm-buffer-name
+  (helm-rg--kill-bufs-if-live helm-rg--buffer-name
                           helm-rg--process-buffer-name
                           helm-rg--error-buffer-name))
 
 (defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
   (helm :sources '(helm-rg-process-source)
-        :buffer helm-rg--helm-buffer-name
+        :buffer helm-rg--buffer-name
         :input rg-pattern
         :prompt "rg pattern: "))
 
@@ -365,7 +377,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
       (substring-no-properties it)
     ""))
 
-(defun helm-rg--helm-header-name (src-name)
+(defun helm-rg--header-name (src-name)
   (format "%s %s @ %s"
           (propertize "rg" 'face 'bold-italic)
           src-name
@@ -373,6 +385,29 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 (defun helm-rg--display-to-real (cand)
   (helm-rg--decompose-vimgrep-output-line cand))
+
+(defmacro helm-rg--into-temp-buffer (to-insert &rest body)
+  (declare (indent 1))
+  `(with-temp-buffer
+     (insert ,to-insert)
+     (goto-char (point-min))
+     ,@body))
+
+(defun helm-rg--collect-matches (regexp)
+  (cl-loop while (re-search-forward regexp nil t)
+           collect (match-string 1)))
+
+(defun helm-rg--join (sep seq)
+  (mapconcat #'identity seq sep))
+
+(defun helm-rg--pattern-transformer (pattern)
+  (->>
+   (helm-rg--into-temp-buffer pattern
+     (helm-rg--collect-matches helm-rg--loop-input-pattern-regexp))
+   (--map (replace-regexp-in-string (rx (= 2 ? )) " " it))
+   (-permutations)
+   (--map (helm-rg--join ".*" it))
+   (helm-rg--join "|")))
 
 (defun helm-rg--iterate-results ())
 
@@ -417,14 +452,15 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 ;; Helm sources
 (defconst helm-rg-process-source
   (helm-make-source "ripgrep" 'helm-grep-ag-class
-    :header-name #'helm-rg--helm-header-name
+    :header-name #'helm-rg--header-name
     :keymap 'helm-rg-map
-    :history 'helm-rg--helm-input-history
+    :history 'helm-rg--input-history
     :help-message "???"
     :candidates-process #'helm-rg--make-process
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'ansi-color-apply
     :display-to-real #'helm-rg--display-to-real
+    :pattern-transformer #'helm-rg--pattern-transformer
     :persistent-action #'helm-rg--async-persistent-action
     :persistent-help "Visit result buffer and highlight matches"
     :requires-pattern nil
