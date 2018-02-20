@@ -7,7 +7,9 @@ processReadme = (readme) ->
   processed = readme
     .replace(///^[^=]+=+\n///, '')
     .replace(/<kbd>(.*?)<\/kbd>/g, (all, g1) -> "'#{g1}'")
-    .replace(///\[([^\]]+)\]\([^\)]+\)///g, (all, g1) -> g1)
+    .replace(///\[!\[([^\]]+)\]\([^\)]+\)\]\(([^\)]+)\)///g,
+             (all, g1, g2) -> "#{g1}: #{g2}")
+    .replace(///\[([^\]]+)\]\(([^\)]+)\)///g, (all, g1, g2) -> "#{g1} (#{g2})")
     .replace(///`([^`]+)`///g, (all, g1) -> "`#{g1}'")
     .replace(/^ +/mg, (all) -> all.replace(/ /g, '='))
   wordwrap(77, {mode: 'soft'})(processed)

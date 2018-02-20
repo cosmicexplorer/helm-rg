@@ -24,16 +24,23 @@
 ;; The below is generated from a README at
 ;; https://github.com/cosmicexplorer/helm-rg.
 
-;; Search massive codebases extremely fast, using `ripgrep' and `helm'.
-;; Inspired by `helm-ag' and `f3'.
+;; MELPA: https://melpa.org/#/helm-rg
 
-;; Also check out rg.el, which I haven't used much but seems pretty cool.
+;; Search massive codebases extremely fast, using `ripgrep'
+;; (https://github.com/BurntSushi/ripgrep) and `helm'
+;; (https://github.com/emacs-helm/helm). Inspired by `helm-ag'
+;; (https://github.com/syohex/emacs-helm-ag) and `f3'
+;; (https://github.com/cosmicexplorer/f3).
+
+;; Also check out rg.el (https://github.com/dajva/rg.el), which I haven't used
+;; much but seems pretty cool.
 
 
 ;; Usage:
 
-;; *See the `ripgrep' whirlwind tour for further information on invoking
-;; `ripgrep'.*
+;; *See the `ripgrep' whirlwind tour
+;; (https://github.com/BurntSushi/ripgrep#whirlwind-tour) for further
+;; information on invoking `ripgrep'.*
 
 ;; - Invoke the interactive function `helm-rg' to start a search with `ripgrep'
 ;; in the current directory.
@@ -45,8 +52,14 @@
 ;; result and highlights the matched text in the preview.
 ;;     - Use 'RET' to visit the file containing the result, move point to the
 ;; start of the match, and recenter.
-;; - The text entered into the minibuffer is interpreted as a PCRE regexp which
-;; `ripgrep' uses to search your files.
+;;         - Displaying the result's buffer is done with
+;; `helm-rg-display-buffer-normal-method' (which defaults to
+;; `switch-to-buffer').
+;;         - Use a prefix argument ('C-u RET') to open the buffer with
+;; `helm-rg-display-buffer-alternate-method' (which defaults to
+;; `pop-to-buffer').
+;; - The text entered into the minibuffer is interpreted as a PCRE
+;; (https://pcre.org) regexp which `ripgrep' uses to search your files.
 ;; - Use 'M-d' to select a new directory to search from.
 ;; - Use 'M-g' to input a glob pattern to filter files by, e.g. `*.py'.
 ;;     - The glob pattern defaults to the value of
@@ -61,12 +74,17 @@
 ;; - make a keybinding to move by files (go to next file of results)
 ;;     - also one to move by containing directory
 ;; - make a keybinding to drop into an edit mode and edit file content inline
-;; in results like helm-ag
+;; in results like helm-ag (https://github.com/syohex/emacs-helm-ag)
+;;     - to truly do this correctly, should have ability to expand surrounding
+;; context for given line
+;;     - arguable whether that's really necessary for a 90% implementation
+;; - allow (elisp)? regex searching of search results, including file names
+;;     - use `helm-swoop' (https://github.com/ShingoFukuyama/helm-swoop)?
 
 
 ;; License:
 
-;; GPL 3.0+
+;; GPL 3.0+ (./LICENSE)
 
 ;; End Commentary
 
