@@ -16,21 +16,27 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - Each line has the file path, the line number, and the column number of the start of the match, and each part is highlighted differently.
     - Use <kbd>TAB</kbd> to invoke the helm persistent action, which previews the result and highlights the matched text in the preview.
     - Use <kbd>RET</kbd> to visit the file containing the result, move point to the start of the match, and recenter.
-        - Displaying the result's buffer is done with `helm-rg-display-buffer-normal-method` (which defaults to `switch-to-buffer`).
+        - The result's buffer is displayed with `helm-rg-display-buffer-normal-method` (which defaults to `switch-to-buffer`).
         - Use a prefix argument (<kbd>C-u RET</kbd>) to open the buffer with `helm-rg-display-buffer-alternate-method` (which defaults to `pop-to-buffer`).
-- The text entered into the minibuffer is interpreted as a [PCRE](https://pcre.org) regexp which `ripgrep` uses to search your files.
+- The text entered into the minibuffer is interpreted into a [PCRE](https://pcre.org) regexp to pass to `ripgrep`.
+    - `helm-rg`'s pattern syntax is basically PCRE, but single spaces basically act as a more powerful conjunction operator.
+        - For example, the pattern `a b` in the minibuffer is transformed into `a.*b|b.*a`.
+            - The single space can be used to find lines with any permutation of the regexps on either side of the space.
+            - Two spaces in a row will search for a literal single space.
+        - `ripgrep`'s `--smart-case` option is used so that case-sensitive search is only on if any of the characters in the pattern are capitalized.
+            - For example, `ab` (conceptually) searches `[Aa][bB]`, but `Ab` in the minibuffer will only search for the pattern `Ab` with `ripgrep`, because it has at least one uppercase letter.
 - Use <kbd>M-d</kbd> to select a new directory to search from.
 - Use <kbd>M-g</kbd> to input a glob pattern to filter files by, e.g. `*.py`.
     - The glob pattern defaults to the value of `helm-rg-default-glob-string`, which is an empty string (matches every file) unless you customize it.
     - Pressing <kbd>M-g</kbd> again shows the same minibuffer prompt for the glob pattern, with the string that was previously input.
+- Use <kbd><left></kbd> and <kbd><right></kbd> to go up and down by files in the results.
+    - <kbd><up></kbd> and <kbd><down></kbd> simply go up and down by match result, and there may be many matches for your pattern in a single file, even multiple on a single line (which `ripgrep` reports as multiple separate results).
+    - The <kbd><left></kbd> and <kbd><right></kbd> keys will move up or down until it lands on a result from a different file than it started on.
+        - When moving by file, `helm-rg` will cycle around the results list, but it will print a harmless error message instead of looping infinitely if all results are from the same file.
 
 # TODO
 
-- make a keybinding to move by files (go to next file of results)
-    - also one to move by containing directory
-- make a keybinding to drop into an edit mode and edit file content inline in results like [helm-ag](https://github.com/syohex/emacs-helm-ag)
-    - to truly do this correctly, should have ability to expand surrounding context for given line
-    - arguable whether that's really necessary for a 90% implementation
+- make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
 

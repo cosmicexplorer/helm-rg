@@ -48,36 +48,52 @@
 ;; type.
 ;;     - Each line has the file path, the line number, and the column number of
 ;; the start of the match, and each part is highlighted differently.
-;;     - Use 'TAB' to invoke the helm persistent action, which previews the
+;;     - Use `TAB' to invoke the helm persistent action, which previews the
 ;; result and highlights the matched text in the preview.
-;;     - Use 'RET' to visit the file containing the result, move point to the
+;;     - Use `RET' to visit the file containing the result, move point to the
 ;; start of the match, and recenter.
-;;         - Displaying the result's buffer is done with
+;;         - The result's buffer is displayed with
 ;; `helm-rg-display-buffer-normal-method' (which defaults to
 ;; `switch-to-buffer').
-;;         - Use a prefix argument ('C-u RET') to open the buffer with
+;;         - Use a prefix argument (`C-u RET') to open the buffer with
 ;; `helm-rg-display-buffer-alternate-method' (which defaults to
 ;; `pop-to-buffer').
-;; - The text entered into the minibuffer is interpreted as a PCRE
-;; (https://pcre.org) regexp which `ripgrep' uses to search your files.
-;; - Use 'M-d' to select a new directory to search from.
-;; - Use 'M-g' to input a glob pattern to filter files by, e.g. `*.py'.
+;; - The text entered into the minibuffer is interpreted into a PCRE
+;; (https://pcre.org) regexp to pass to `ripgrep'.
+;;     - `helm-rg''s pattern syntax is basically PCRE, but single spaces
+;; basically act as a more powerful conjunction operator.
+;;         - For example, the pattern `a b' in the minibuffer is transformed
+;; into `a.*b|b.*a'.
+;;             - The single space can be used to find lines with any
+;; permutation of the regexps on either side of the space.
+;;             - Two spaces in a row will search for a literal single space.
+;;         - `ripgrep''s `--smart-case' option is used so that case-sensitive
+;; search is only on if any of the characters in the pattern are capitalized.
+;;             - For example, `ab' (conceptually) searches `[Aa][bB]', but `Ab'
+;; in the minibuffer will only search for the pattern `Ab' with `ripgrep',
+;; because it has at least one uppercase letter.
+;; - Use `M-d' to select a new directory to search from.
+;; - Use `M-g' to input a glob pattern to filter files by, e.g. `*.py'.
 ;;     - The glob pattern defaults to the value of
 ;; `helm-rg-default-glob-string', which is an empty string (matches every file)
 ;; unless you customize it.
-;;     - Pressing 'M-g' again shows the same minibuffer prompt for the glob
+;;     - Pressing `M-g' again shows the same minibuffer prompt for the glob
 ;; pattern, with the string that was previously input.
+;; - Use `<left>' and `<right>' to go up and down by files in the results.
+;;     - `<up>' and `<down>' simply go up and down by match result, and there
+;; may be many matches for your pattern in a single file, even multiple on a
+;; single line (which `ripgrep' reports as multiple separate results).
+;;     - The `<left>' and `<right>' keys will move up or down until it lands on
+;; a result from a different file than it started on.
+;;         - When moving by file, `helm-rg' will cycle around the results list,
+;; but it will print a harmless error message instead of looping infinitely if
+;; all results are from the same file.
 
 
 ;; TODO:
 
-;; - make a keybinding to move by files (go to next file of results)
-;;     - also one to move by containing directory
 ;; - make a keybinding to drop into an edit mode and edit file content inline
-;; in results like helm-ag (https://github.com/syohex/emacs-helm-ag)
-;;     - to truly do this correctly, should have ability to expand surrounding
-;; context for given line
-;;     - arguable whether that's really necessary for a 90% implementation
+;; in results like `helm-ag' (https://github.com/syohex/emacs-helm-ag)
 ;; - allow (elisp)? regex searching of search results, including file names
 ;;     - use `helm-swoop' (https://github.com/ShingoFukuyama/helm-swoop)?
 
@@ -317,27 +333,6 @@ Should accept one argument BUF, the buffer to display.")
          :col-no (1- (string-to-number col-no))
          :content content)))))
 
-(defun helm-rg--pcre-to-elisp-regexp (pcre)
-  "Convert the string PCRE to an Emacs Lisp regexp."
-  (with-temp-buffer
-    (insert pcre)
-    (goto-char (point-min))
-    ;; convert (, ), {, }, |
-    (while (re-search-forward "[(){}|]" nil t)
-      (backward-char 1)
-      (cond ((looking-back "\\\\\\\\" nil))
-            ((looking-back "\\\\" nil)
-             (delete-char -1))
-            (t
-             (insert "\\")))
-      (forward-char 1))
-    ;; convert \s and \S -> \s- \S-
-    (goto-char (point-min))
-    (while (re-search-forward "\\(\\\\s\\)" nil t)
-      (unless (looking-back "\\\\\\\\s" nil)
-        (insert "-")))
-    (buffer-string)))
-
 (defun helm-rg--make-overlay-with-face (beg end face)
   "Generate an overlay in region BEG to END with face FACE."
   (let ((olay (make-overlay beg end)))
@@ -475,7 +470,63 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
    (--map (helm-rg--join ".*" it))
    (helm-rg--join "|")))
 
-(defun helm-rg--iterate-results ())
+(defun helm-rg--advance-forward ()
+  (interactive)
+  (if (helm-end-of-source-p)
+      (helm-beginning-of-buffer)
+    (helm-next-line)))
+
+(defun helm-rg--advance-backward ()
+  (interactive)
+  (if (helm-beginning-of-source-p)
+      (helm-end-of-buffer)
+    (helm-previous-line)))
+
+(defun helm-rg--iterate-results (direction success-fn failure-fn)
+  (with-helm-window
+    (let ((helm-move-to-line-cycle-in-source t)
+          (move-fn
+           (pcase-exhaustive direction
+             (`forward #'helm-rg--advance-forward)
+             (`backward #'helm-rg--advance-backward))))
+      (call-interactively move-fn)
+      (cl-loop
+
+       for cur-line-parsed = (helm-rg--decompose-vimgrep-output-line
+                               (helm-current-line-contents))
+       until (funcall success-fn cur-line-parsed)
+       if (funcall failure-fn cur-line-parsed)
+       return (message "%s" "failure: could not cycle to next entry")
+       else do (call-interactively move-fn)))))
+
+(defun helm-rg--move-file (direction)
+  (-let* ((cur-line
+           (with-helm-buffer (helm-current-line-contents)))
+          (parsed-line
+           (helm-rg--decompose-vimgrep-output-line cur-line))
+          ((&plist :file-path file-path
+                   :line-no line-no
+                   :col-no col-no)
+           parsed-line))
+    (helm-rg--iterate-results
+     direction
+     (-lambda ((&plist :file-path new-file-path))
+       (not (string-equal new-file-path file-path)))
+     (-lambda ((&plist :file-path new-file-path
+                       :line-no new-line-no
+                       :col-no new-col-no))
+       (and
+        (string-equal new-file-path file-path)
+        (= new-line-no line-no)
+        (= new-col-no col-no))))))
+
+(defun helm-rg--file-forward ()
+  (interactive)
+  (helm-rg--move-file 'forward))
+
+(defun helm-rg--file-backward ()
+  (interactive)
+  (helm-rg--move-file 'backward))
 
 
 ;; Toggles and settings
@@ -511,6 +562,8 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
     (set-keymap-parent map helm-map)
     (define-key map (kbd "M-g") #'helm-rg--set-glob)
     (define-key map (kbd "M-d") #'helm-rg--set-dir)
+    (define-key map (kbd "<right>") #'helm-rg--file-forward)
+    (define-key map (kbd "<left>") #'helm-rg--file-backward)
     map)
   "Keymap for `helm-rg'.")
 
