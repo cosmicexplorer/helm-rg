@@ -26,6 +26,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 
 # TODO
 
+- make it search the current buffer with prefix arg
 - make a keybinding to move by files (go to next file of results)
     - also one to move by containing directory
 - make a keybinding to drop into an edit mode and edit file content inline in results like [helm-ag](https://github.com/syohex/emacs-helm-ag)
