@@ -282,13 +282,13 @@ Should accept one argument BUF, the buffer to display.")
      for (beg end) = (match-data t)
      collect (list :beg (1- beg) :end (1- end)))))
 
-(defun helm-rg--async-action (cand)
+(defun helm-rg--async-action (parsed-output)
   "Visit the file at the line and column specified by CAND.
 The match is highlighted in its buffer."
   (let ((default-directory helm-rg--current-dir))
     (helm-rg--delete-overlays)
     (cl-destructuring-bind (&key file-path line-no col-no content)
-        (helm-rg--decompose-vimgrep-output-line cand)
+        parsed-output
       (let* ((file-abs-path
               (expand-file-name file-path))
              (buffer-to-display
@@ -318,12 +318,12 @@ The match is highlighted in its buffer."
         (forward-char col-no)
         (recenter)))))
 
-(defun helm-rg--async-persistent-action (cand)
+(defun helm-rg--async-persistent-action (parsed-output)
   "Visit the file at the line and column specified by CAND.
 Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 `helm-rg--current-overlays', if there was no buffer visiting it already."
   (let ((helm-rg--append-persistent-buffers t))
-    (helm-rg--async-action cand)))
+    (helm-rg--async-action parsed-output)))
 
 (defun helm-rg--kill-proc-if-live (proc-name)
   "Delete the process named PROC-NAME, if it is alive."
@@ -370,6 +370,9 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
           (propertize "rg" 'face 'bold-italic)
           src-name
           helm-rg--current-dir))
+
+(defun helm-rg--display-to-real (cand)
+  (helm-rg--decompose-vimgrep-output-line cand))
 
 (defun helm-rg--iterate-results ())
 
@@ -421,6 +424,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
     :candidates-process #'helm-rg--make-process
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'ansi-color-apply
+    :display-to-real #'helm-rg--display-to-real
     :persistent-action #'helm-rg--async-persistent-action
     :persistent-help "Visit result buffer and highlight matches"
     :requires-pattern nil
