@@ -334,8 +334,7 @@ The match is highlighted in its buffer."
              (if helm-current-prefix-arg helm-rg-display-buffer-alternate-method
                helm-rg-display-buffer-normal-method))))
     (helm-rg--delete-overlays)
-    (cl-destructuring-bind (&key file-path line-no col-no content)
-        parsed-output
+    (cl-destructuring-bind (&key file-path line-no col-no content) parsed-output
       (let* ((file-abs-path
               (expand-file-name file-path))
              (buffer-to-display
