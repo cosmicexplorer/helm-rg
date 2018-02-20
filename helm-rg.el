@@ -94,6 +94,7 @@
 (require 'ansi-color)
 (require 'cl-lib)
 (require 'dash)
+(require 'font-lock)
 (require 'helm)
 (require 'helm-grep)
 (require 'helm-lib)
@@ -164,6 +165,11 @@ in `helm-rg'."
 (defface helm-rg-preview-match-highlight
   '((t (:background "purple" :foreground "white")))
   "Face of the text matched by the pattern given to the ripgrep process."
+  :group 'helm-rg)
+
+(defface helm-rg-cmd-arg-face
+  '((t (:foreground "green")))
+  "Face of arguments in the ripgrep invocation."
   :group 'helm-rg)
 
 
@@ -247,29 +253,57 @@ Should accept one argument BUF, the buffer to display.")
     (helm-attrset 'name helm-src-name)
     dummy-proc))
 
+(defun helm-rg--join (sep seq)
+  (mapconcat #'identity seq sep))
+
+(defun helm-rg--props (props str)
+  (apply #'propertize (append (list str) props)))
+
+(defun helm-rg--make-face (face str)
+  (helm-rg--props `(face ,face) str))
+
+(defun helm-rg--propertize-cmd-arg (arg)
+  (if (string-match-p (rx space) arg)
+      (helm-rg--make-face 'font-lock-string-face (format "'%s'" arg))
+    (helm-rg--make-face 'helm-rg-cmd-arg-face arg)))
+
+(defun helm-rg--format-argv-string (argv)
+  (->>
+   argv
+   (-map #'helm-rg--propertize-cmd-arg)
+   (helm-rg--join " ")
+   (format
+    (concat
+     (propertize "(" 'face 'highlight)
+     "%s"
+     (propertize ")" 'face 'highlight)))))
+
+(defun helm-rg--construct-argv-for-cwd (pattern)
+  (append
+   helm-rg-base-command
+   (list "-g" helm-rg--glob-string)
+   (list pattern)))
+
+(defun helm-rg--make-process-from-argv (argv)
+  (let* ((real-proc (make-process
+                     :name helm-rg--process-name
+                     :buffer helm-rg--process-buffer-name
+                     :command argv
+                     :noquery t))
+         (helm-src-name
+          (format "argv: %s" (helm-rg--format-argv-string argv))))
+    (helm-attrset 'name helm-src-name)
+    (set-process-query-on-exit-flag real-proc nil)
+    real-proc))
+
 (defun helm-rg--make-process ()
   "Invoke ripgrep in `helm-rg--current-dir' with `helm-pattern'."
   (let* ((default-directory helm-rg--current-dir)
          (input helm-pattern))
     (if (< (length input) helm-rg-input-min-search-chars)
         (helm-rg--make-dummy-process input)
-      (let* ((rg-cmd
-              (append
-               helm-rg-base-command
-               (list "-g" helm-rg--glob-string)
-               (list helm-pattern)))
-             (real-proc (make-process
-                         :name helm-rg--process-name
-                         :buffer helm-rg--process-buffer-name
-                         :command rg-cmd
-                         :noquery t))
-             (helm-src-name
-              (format "argv: (%s)"
-                      (mapconcat (lambda (s) (format "'%s'" s))
-                                 rg-cmd " "))))
-        (helm-attrset 'name helm-src-name)
-        (set-process-query-on-exit-flag real-proc nil)
-        real-proc))))
+      (helm-rg--make-process-from-argv
+       (helm-rg--construct-argv-for-cwd input)))))
 
 (defun helm-rg--decompose-vimgrep-output-line (line)
   "Parse LINE into its constituent elements, returning a plist."
@@ -396,8 +430,8 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
    finally (setq helm-rg--cur-persistent-bufs nil))
   (helm-rg--kill-proc-if-live helm-rg--process-name)
   (helm-rg--kill-bufs-if-live helm-rg--buffer-name
-                          helm-rg--process-buffer-name
-                          helm-rg--error-buffer-name))
+                              helm-rg--process-buffer-name
+                              helm-rg--error-buffer-name))
 
 (defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
@@ -431,9 +465,6 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 (defun helm-rg--collect-matches (regexp)
   (cl-loop while (re-search-forward regexp nil t)
            collect (match-string 1)))
-
-(defun helm-rg--join (sep seq)
-  (mapconcat #'identity seq sep))
 
 (defun helm-rg--pattern-transformer (pattern)
   (->>
