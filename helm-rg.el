@@ -122,8 +122,19 @@ See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
   :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
 
-(defcustom helm-rg--display-buffer-default-method #'switch-to-buffer
-  "The function to use to display each visited buffer in some window."
+(defcustom helm-rg-display-buffer-default-method #'switch-to-buffer
+  "A function accepting a single argument BUF and displaying the buffer.
+
+The default function to invoke to display a visited buffer in some window in
+`helm-rg'."
+  :type 'function
+  :group 'helm-rg)
+
+(defcustom helm-rg-display-buffer-alternate-method #'pop-to-buffer
+  "A function accepting a single argument BUF and displaying the buffer.
+
+The function will be invoked if a prefix argument is used when visiting a result
+in `helm-rg'."
   :type 'function
   :group 'helm-rg)
 
@@ -158,8 +169,10 @@ See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
          eol))
   "Regexp matching the output of invoking ripgrep with the '--vimgrep' option.")
 
-(defconst helm-rg--alternate-display-buffer-method #'pop-to-buffer
-  "A function accepting a single argument BUF and displaying the buffer.")
+(defconst helm-rg--persistent-action-display-buffer-method #'switch-to-buffer
+  "A function accepting a single argument BUF and displaying the buffer.
+
+Let-bound to `helm-rg--display-buffer-method' in `helm-rg--async-persistent-action'.")
 
 (defconst helm-rg--loop-input-pattern-regexp
   (rx
@@ -297,7 +310,11 @@ Should accept one argument BUF, the buffer to display.")
 (defun helm-rg--async-action (parsed-output)
   "Visit the file at the line and column specified by CAND.
 The match is highlighted in its buffer."
-  (let ((default-directory helm-rg--current-dir))
+  (let ((default-directory helm-rg--current-dir)
+        (helm-rg--display-buffer-method
+         (or helm-rg--display-buffer-method
+             (if helm-current-prefix-arg helm-rg-display-buffer-alternate-method
+               helm-rg-display-buffer-default-method))))
     (helm-rg--delete-overlays)
     (cl-destructuring-bind (&key file-path line-no col-no content)
         parsed-output
@@ -334,7 +351,8 @@ The match is highlighted in its buffer."
   "Visit the file at the line and column specified by CAND.
 Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 `helm-rg--current-overlays', if there was no buffer visiting it already."
-  (let ((helm-rg--append-persistent-buffers t))
+  (let ((helm-rg--append-persistent-buffers t)
+        (helm-rg--display-buffer-method helm-rg--persistent-action-display-buffer-method))
     (helm-rg--async-action parsed-output)))
 
 (defun helm-rg--kill-proc-if-live (proc-name)
@@ -478,10 +496,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
   (let* ((helm-rg--current-dir (or helm-rg--current-dir
                                    default-directory))
          (helm-rg--glob-string (or helm-rg--glob-string
-                                   helm-rg-default-glob-string))
-         (helm-rg--display-buffer-method
-          (if pfx helm-rg--alternate-display-buffer-method
-            helm-rg--display-buffer-default-method)))
+                                   helm-rg-default-glob-string)))
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
 
