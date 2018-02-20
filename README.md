@@ -27,8 +27,10 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 - make a keybinding to move by files (go to next file of results)
     - also one to move by containing directory
 - make a keybinding to drop into an edit mode and edit file content inline in results like [helm-ag](https://github.com/syohex/emacs-helm-ag)
+    - to truly do this correctly, should have ability to expand surrounding context for given line
+    - arguable whether that's really necessary for a 90% implementation
 - allow (elisp)? regex searching of search results, including file names
-    - use helm-swoop?
+    - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
 - make a keybinding for a separate action that opens in a new window, instead of having to press <kbd>C-u</kbd> at the start of the search
 
 # License
