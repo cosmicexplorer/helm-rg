@@ -179,6 +179,9 @@ Set to the empty string to match every file."
 (defvar helm-rg--glob-string-history nil
   "History variable for the selection of `helm-rg--glob-string'.")
 
+(defvar helm-rg--helm-input-history nil
+  "History variable for the pattern input to the ripgrep process.")
+
 (defvar helm-rg--display-buffer-method nil
   "The method to use to display a buffer visiting a result.
 Should accept one argument BUF, the buffer to display.")
@@ -357,7 +360,8 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
   (helm :sources '(helm-rg-process-source)
         :buffer helm-rg--helm-buffer-name
         :input rg-pattern
-        :prompt "rg pattern: "))
+        :prompt "rg pattern: "
+        :history 'helm-rg--helm-input-history))
 
 (defun helm-rg--get-thing-at-pt ()
   "Get the object surrounding point, or the empty string."
