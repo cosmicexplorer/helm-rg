@@ -27,6 +27,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 - make a keybinding to drop into an edit mode and edit file content inline in results like [helm-ag](https://github.com/syohex/emacs-helm-ag)
 - allow (elisp)? regex searching of search results, including file names
     - use helm-swoop?
+- make a keybinding for a separate action that opens in a new window, instead of having to press <kbd>C-u</kbd> at the start of the search
 
 # License
 
