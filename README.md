@@ -16,6 +16,8 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - Each line has the file path, the line number, and the column number of the start of the match, and each part is highlighted differently.
     - Use <kbd>TAB</kbd> to invoke the helm persistent action, which previews the result and highlights the matched text in the preview.
     - Use <kbd>RET</kbd> to visit the file containing the result, move point to the start of the match, and recenter.
+        - Displaying the result's buffer is done with `helm-rg-display-buffer-normal-method` (which defaults to `switch-to-buffer`).
+        - Use a prefix argument (<kbd>C-u RET</kbd>) to open the buffer with `helm-rg-display-buffer-alternate-method` (which defaults to `pop-to-buffer`).
 - The text entered into the minibuffer is interpreted as a [PCRE](https://pcre.org) regexp which `ripgrep` uses to search your files.
 - Use <kbd>M-d</kbd> to select a new directory to search from.
 - Use <kbd>M-g</kbd> to input a glob pattern to filter files by, e.g. `*.py`.
@@ -31,7 +33,6 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - arguable whether that's really necessary for a 90% implementation
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
-- make a keybinding for a separate action that opens in a new window, instead of having to press <kbd>C-u</kbd> at the start of the search
 
 # License
 

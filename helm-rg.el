@@ -122,7 +122,7 @@ See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
   :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
 
-(defcustom helm-rg-display-buffer-default-method #'switch-to-buffer
+(defcustom helm-rg-display-buffer-normal-method #'switch-to-buffer
   "A function accepting a single argument BUF and displaying the buffer.
 
 The default function to invoke to display a visited buffer in some window in
@@ -314,7 +314,7 @@ The match is highlighted in its buffer."
         (helm-rg--display-buffer-method
          (or helm-rg--display-buffer-method
              (if helm-current-prefix-arg helm-rg-display-buffer-alternate-method
-               helm-rg-display-buffer-default-method))))
+               helm-rg-display-buffer-normal-method))))
     (helm-rg--delete-overlays)
     (cl-destructuring-bind (&key file-path line-no col-no content)
         parsed-output
