@@ -1,5 +1,7 @@
 helm-rg
-==============
+=======
+
+[![MELPA](https://melpa.org/packages/helm-rg-badge.svg)](https://melpa.org/#/helm-rg)
 
 Search massive codebases extremely fast, using [`ripgrep`](https://github.com/BurntSushi/ripgrep) and [`helm`](https://github.com/emacs-helm/helm). Inspired by [`helm-ag`](https://github.com/syohex/emacs-helm-ag) and [`f3`](https://github.com/cosmicexplorer/f3).
 
