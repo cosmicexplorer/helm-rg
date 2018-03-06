@@ -39,6 +39,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 - make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
+- have some keybinding or other discoverable/convenient method to display the `rg` man page
 
 # License
 
