@@ -677,7 +677,9 @@ overridden with `helm-rg--set-glob', which is defined in `helm-rg-map':
          (helm-rg--glob-string
           (or helm-rg--glob-string
               helm-rg-default-glob-string))
-         (helm-rg--paths-to-search paths))
+         (helm-rg--paths-to-search
+          (or helm-rg--paths-to-search
+              paths)))
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
 
