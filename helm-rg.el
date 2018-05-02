@@ -574,7 +574,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
     :header-name #'helm-rg--header-name
     :keymap 'helm-rg-map
     :history 'helm-rg--input-history
-    :help-message "???"
+    :help-message "FIXME: useful help message!!!"
     :candidates-process #'helm-rg--make-process
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'ansi-color-apply
