@@ -114,6 +114,7 @@
 (require 'helm)
 (require 'helm-grep)
 (require 'helm-lib)
+(require 'pcase)
 (require 'pcre2el)
 (require 'rx)
 (require 'rxt)
@@ -142,6 +143,23 @@
 Set to the empty string to match every file."
   :type 'string
   :safe #'helm-rg--always-safe-local
+  :group 'helm-rg)
+
+(defcustom helm-rg-default-directory 'default
+  "Specification for starting directory to invoke ripgrep in.
+Used in `helm-rg--interpret-starting-dir'. Possible values:
+
+'default => Use `default-directory'.
+'git-root => Use \"git rev-parse --show-toplevel\" (see
+             `helm-rg-git-executable').
+<string> => Use the directory at path <string>."
+  :type '(choice symbol string)
+  :safe #'helm-rg--always-safe-local
+  :group 'helm-rg)
+
+(defcustom helm-rg-git-executable (executable-find "git")
+  "Location of git executable."
+  :type 'string
   :group 'helm-rg)
 
 (defcustom helm-rg-thing-at-point 'symbol
@@ -256,6 +274,12 @@ Let-bound to `helm-rg--display-buffer-method' in `helm-rg--async-persistent-acti
   "The method to use to display a buffer visiting a result.
 Should accept one argument BUF, the buffer to display.")
 
+(defvar helm-rg--paths-to-search nil
+  "List of paths to use in the ripgrep command.
+All paths are interpreted relative to the directory ripgrep is invoked from.
+When nil, searches from the directory ripgrep is invoked from.
+See the documentation for `helm-rg-default-directory'.")
+
 
 ;; Logic
 (defun helm-rg--make-dummy-process (input)
@@ -297,11 +321,14 @@ Should accept one argument BUF, the buffer to display.")
      "%s"
      (propertize ")" 'face 'highlight)))))
 
-(defun helm-rg--construct-argv-for-cwd (pattern)
+(defun helm-rg--construct-argv (pattern)
+  "Create an argument list for the ripgrep command.
+Uses `defcustom' values, and `defvar' values bound in other functions."
   (append
    helm-rg-base-command
    (list "-g" helm-rg--glob-string)
-   (list pattern)))
+   (list pattern)
+   helm-rg--paths-to-search))
 
 (defun helm-rg--make-process-from-argv (argv)
   (let* ((real-proc (make-process
@@ -316,13 +343,14 @@ Should accept one argument BUF, the buffer to display.")
     real-proc))
 
 (defun helm-rg--make-process ()
-  "Invoke ripgrep in `helm-rg--current-dir' with `helm-pattern'."
+  "Invoke ripgrep in `helm-rg--current-dir' with `helm-pattern'.
+Make a dummy process if the input is empty with a clear message to the user."
   (let* ((default-directory helm-rg--current-dir)
          (input helm-pattern))
     (if (< (length input) helm-rg-input-min-search-chars)
         (helm-rg--make-dummy-process input)
       (helm-rg--make-process-from-argv
-       (helm-rg--construct-argv-for-cwd input)))))
+       (helm-rg--construct-argv input)))))
 
 (defun helm-rg--decompose-vimgrep-output-line (line)
   "Parse LINE into its constituent elements, returning a plist."
@@ -558,6 +586,40 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
             (read-directory-name "rg directory: " helm-rg--current-dir nil t)))
        (helm-rg--do-helm-rg pat)))))
 
+(defun helm-rg--is-executable-file (path)
+  (and path
+       (file-executable-p path)
+       (not (file-directory-p path))))
+
+(defun helm-rg--process-output (exe &rest args)
+  "Get output from a process specified by string arguments.
+Merges stdout and stderr, and trims whitespace from the result."
+  (with-temp-buffer
+    (let ((proc (make-process
+                 :name "temp-proc"
+                 :buffer (current-buffer)
+                 :command `(,exe ,@args)
+                 :sentinel #'ignore)))
+      (while (accept-process-output proc nil nil t)))
+    (trim-whitespace (buffer-string))))
+
+(defun helm-rg--check-directory-path (path)
+  (if (and path (file-directory-p path)) path
+    (error "path '%S' was not a directory." path)))
+
+(defun helm-rg--get-git-root ()
+  (if (helm-rg--is-executable-file helm-rg-git-executable)
+      (helm-rg--process-output helm-rg-git-executable
+                               "rev-parse" "--show-toplevel")
+    (error "helm-rg-git-executable is not an executable file (was: %S)."
+           helm-rg-git-executable)))
+
+(defun helm-rg--interpret-starting-dir (default-directory-spec)
+  (pcase-exhaustive default-directory-spec
+    ('default default-directory)
+    ('git-root (helm-rg--get-git-root))
+    ((pred stringp) (helm-rg--check-directory-path))))
+
 
 ;; Keymap
 (defconst helm-rg-map
@@ -592,15 +654,30 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 ;; Autoloaded functions
 ;;;###autoload
-(defun helm-rg (rg-pattern &optional pfx)
-  "Search for the perl regexp RG-PATTERN extremely quickly with ripgrep.
+(defun helm-rg (rg-pattern &optional pfx paths)
+  "Search for the PCRE regexp RG-PATTERN extremely quickly with ripgrep.
+
+When invoked interactively with a prefix argument, or when PFX is non-nil,
+set the cwd for the ripgrep process to `default-directory'. Otherwise use the
+cwd as described by `helm-rg-default-directory'.
+
+If PATHS is non-nil, ripgrep will search only those paths, relative to the
+process's cwd. Otherwise, the process's cwd will be searched.
+
+Note that ripgrep respects glob patterns from .gitignore, .rgignore, and .ignore
+files. This composes with the glob defined by `helm-rg-default-glob-string', or
+overridden with `helm-rg--set-glob', which is defined in `helm-rg-map':
 
 \\{helm-rg-map}"
-  (interactive (list (helm-rg--get-thing-at-pt) current-prefix-arg))
-  (let* ((helm-rg--current-dir (or helm-rg--current-dir
-                                   default-directory))
-         (helm-rg--glob-string (or helm-rg--glob-string
-                                   helm-rg-default-glob-string)))
+  (interactive (list (helm-rg--get-thing-at-pt) current-prefix-arg nil))
+  (let* ((helm-rg--current-dir
+          (or helm-rg--current-dir
+              (and pfx default-directory)
+              (helm-rg--interpret-starting-dir helm-rg-default-directory)))
+         (helm-rg--glob-string
+          (or helm-rg--glob-string
+              helm-rg-default-glob-string))
+         (helm-rg--paths-to-search paths))
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
 
