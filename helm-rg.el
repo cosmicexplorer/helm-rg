@@ -173,6 +173,9 @@ in `helm-rg'."
   :type 'function
   :group 'helm-rg)
 
+
+
+;; Faces
 (defface helm-rg-preview-line-highlight
   '((t (:background "green" :foreground "black")))
   "Face for the line of text matched by the ripgrep process."
