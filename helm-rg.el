@@ -321,6 +321,9 @@ See the documentation for `helm-rg-default-directory'.")
      "%s"
      (propertize ")" 'face 'highlight)))))
 
+(defun helm-rg--process-paths-to-search (paths)
+  (--map (expand-file-name it helm-rg--current-dir) paths))
+
 (defun helm-rg--construct-argv (pattern)
   "Create an argument list for the ripgrep command.
 Uses `defcustom' values, and `defvar' values bound in other functions."
@@ -328,7 +331,7 @@ Uses `defcustom' values, and `defvar' values bound in other functions."
    helm-rg-base-command
    (list "-g" helm-rg--glob-string)
    (list pattern)
-   helm-rg--paths-to-search))
+   (helm-rg--process-paths-to-search helm-rg--paths-to-search)))
 
 (defun helm-rg--make-process-from-argv (argv)
   (let* ((real-proc (make-process
