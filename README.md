@@ -3,6 +3,8 @@ helm-rg
 
 [![MELPA](https://melpa.org/packages/helm-rg-badge.svg)](https://melpa.org/#/helm-rg)
 
+![`helm-rg` example usage](./emacs-helm-rg.png)
+
 Search massive codebases extremely fast, using [`ripgrep`](https://github.com/BurntSushi/ripgrep) and [`helm`](https://github.com/emacs-helm/helm). Inspired by [`helm-ag`](https://github.com/syohex/emacs-helm-ag) and [`f3`](https://github.com/cosmicexplorer/f3).
 
 Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used much but seems pretty cool.
