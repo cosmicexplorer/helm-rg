@@ -40,6 +40,24 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 # TODO
 
 - make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
+    - needs to dedup results from the same line
+        - should also merge the colorations
+        - this might be easier without using the `--vimgrep` flag (!!!)
+    - can insert markers on either side of each line to find the text added or removed!!!! (huge)
+
+Example output without `--vimgrep`:
+
+    src/python/pants/reporting/plaintext_reporter.py <- get the file name in a buffer-local
+    221:      workunit.start_delta_string, <- highlighted -- add a property to the text saying where to jump to that we check in the (persistent?) action
+
+    src/python/pants/reporting/html_reporter.py
+    105:              <span class="timedelta">{workunit.start_delta_string}</span>
+
+    src/python/pants/base/workunit.py
+    227:  def start_delta_string(self):
+    280:                'outcome', 'start_time_string', 'start_delta_string']:
+
+- toggle `--smart-case` like we do with glob strings
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
 - publish `update-commentary.el` and the associated machinery as an npm package
