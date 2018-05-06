@@ -35,13 +35,14 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - <kbd><up></kbd> and <kbd><down></kbd> simply go up and down by match result, and there may be many matches for your pattern in a single file, even multiple on a single line (which `ripgrep` reports as multiple separate results).
     - The <kbd><left></kbd> and <kbd><right></kbd> keys will move up or down until it lands on a result from a different file than it started on.
         - When moving by file, `helm-rg` will cycle around the results list, but it will print a harmless error message instead of looping infinitely if all results are from the same file.
+- Use the interactive autoloaded function `helm-rg-display-help` to see the ripgrep command's usage info.
 
 # TODO
 
 - make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
-- have some keybinding or other discoverable/convenient method to display the `rg` man page
+- publish `update-commentary.el` and the associated machinery as an npm package
 
 # License
 

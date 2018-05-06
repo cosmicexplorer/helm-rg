@@ -88,6 +88,8 @@
 ;;         - When moving by file, `helm-rg' will cycle around the results list,
 ;; but it will print a harmless error message instead of looping infinitely if
 ;; all results are from the same file.
+;; - Use the interactive autoloaded function `helm-rg-display-help' to see the
+;; ripgrep command's usage info.
 
 
 ;; TODO:
@@ -96,6 +98,8 @@
 ;; in results like `helm-ag' (https://github.com/syohex/emacs-helm-ag)
 ;; - allow (elisp)? regex searching of search results, including file names
 ;;     - use `helm-swoop' (https://github.com/ShingoFukuyama/helm-swoop)?
+;; - publish `update-commentary.el' and the associated machinery as an npm
+;; package
 
 
 ;; License:
@@ -131,11 +135,9 @@
   "Group for `helm-rg' customizations."
   :group 'helm-grep)
 
-(defcustom helm-rg-base-command
-  '("rg" "--vimgrep" "--color=always" "--smart-case")
-  "The beginning of the command line to invoke ripgrep, as a list."
-  :type 'list
-  :safe #'helm-rg--always-safe-local
+(defcustom helm-rg-ripgrep-executable (executable-find "rg")
+  "The location of the ripgrep binary executable."
+  :type 'string
   :group 'helm-rg)
 
 (defcustom helm-rg-default-glob-string ""
@@ -211,12 +213,18 @@ in `helm-rg'."
 
 
 ;; Constants
+(defconst helm-rg--base-command-args
+  '("--vimgrep" "--color=always" "--smart-case")
+  "Arguments necessary for functionality on the ripgrep command line.")
+
 (defconst helm-rg--buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
 (defconst helm-rg--process-buffer-name "*helm-rg--rg-output*")
 
 (defconst helm-rg--error-process-name "*helm-rg--error-process*")
 (defconst helm-rg--error-buffer-name "*helm-rg--errors*")
+
+(defconst helm-rg--ripgrep-help-buffer-name "*helm-rg-usage-help*")
 
 (defconst helm-rg--vimgrep-output-line-regexp
   (rx (: bol
@@ -327,11 +335,13 @@ See the documentation for `helm-rg-default-directory'.")
 (defun helm-rg--construct-argv (pattern)
   "Create an argument list for the ripgrep command.
 Uses `defcustom' values, and `defvar' values bound in other functions."
-  (append
-   helm-rg-base-command
-   (list "-g" helm-rg--glob-string)
-   (list pattern)
-   (helm-rg--process-paths-to-search helm-rg--paths-to-search)))
+  (cons
+   helm-rg-ripgrep-executable
+   (append
+    helm-rg--base-command-args
+    (list "-g" helm-rg--glob-string)
+    (list pattern)
+    (helm-rg--process-paths-to-search helm-rg--paths-to-search))))
 
 (defun helm-rg--make-process-from-argv (argv)
   (let* ((real-proc (make-process
@@ -623,6 +633,16 @@ Merges stdout and stderr, and trims whitespace from the result."
     ('git-root (helm-rg--get-git-root))
     ((pred stringp) (helm-rg--check-directory-path))))
 
+(defun helm-rg--make-help-buffer (help-buf-name)
+  (with-current-buffer (get-buffer-create help-buf-name)
+    (read-only-mode -1)
+    (erase-buffer)
+    (fundamental-mode)
+    (insert (helm-rg--process-output helm-rg-ripgrep-executable "--help"))
+    (goto-char (point-min))
+    (read-only-mode 1)
+    (current-buffer)))
+
 
 ;; Keymap
 (defconst helm-rg-map
@@ -685,6 +705,24 @@ overridden with `helm-rg--set-glob', which is defined in `helm-rg-map':
               paths)))
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
+
+;;;###autoload
+(defun helm-rg-display-help (&optional pfx)
+  "Display a buffer with the ripgrep command's usage help.
+
+The help buffer will be reused if it was already created. A prefix argument when
+invoked interactively, or a non-nil value for PFX, will display the help buffer
+in the current window. Otherwise, if the help buffer is already being displayed
+in some window, select that window, or else display the help buffer with
+`pop-to-buffer'."
+  (interactive "P")
+  (let ((filled-out-help-buf
+         (or (get-buffer helm-rg--ripgrep-help-buffer-name)
+             (helm-rg--make-help-buffer helm-rg--ripgrep-help-buffer-name))))
+    (if pfx (switch-to-buffer filled-out-help-buf)
+      (-if-let ((buf-win (get-buffer-window filled-out-help-buf t)))
+          (select-window buf-win)
+        (pop-to-buffer filled-out-help-buf)))))
 
 (provide 'helm-rg)
 ;;; helm-rg.el ends here
