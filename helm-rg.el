@@ -391,6 +391,13 @@ Make a dummy process if the input is empty with a clear message to the user."
   (mapc #'delete-overlay helm-rg--current-overlays)
   (setq helm-rg--current-overlays nil))
 
+(defmacro helm-rg--get-optional-typed (type-name obj &rest body)
+  (declare (indent 2))
+  `(let ((it ,obj))
+     (when it
+       (cl-check-type it ,type-name)
+       ,@body)))
+
 (defun helm-rg--async-action (parsed-output)
   "Visit the file at the line and column specified by CAND.
 The match is highlighted in its buffer."
@@ -411,7 +418,8 @@ The match is highlighted in its buffer."
                     new-buf))))
         (funcall helm-rg--display-buffer-method buffer-to-display)
         (goto-char (point-min))
-        (forward-line line-num)
+        (helm-rg--get-optional-typed number line-num
+          (forward-line it))
         (let* ((line-olay
                 (helm-rg--make-overlay-with-face
                  (line-beginning-position) (line-end-position)
@@ -424,9 +432,11 @@ The match is highlighted in its buffer."
                       match-results)))
           (setq helm-rg--current-overlays
                 (cons line-olay match-olays)))
-        ;; Move to the first match in the line (all lines have >= 1 match).
+        ;; Move to the first match in the line (all lines have >= 1 match because ripgrep only
+        ;; outputs matching lines).
         (let ((first-match-beginning (plist-get (car match-results) :beg)))
-          (forward-char first-match-beginning))
+          (helm-rg--get-optional-typed number first-match-beginning
+            (forward-char it)))
         (recenter)))))
 
 (defun helm-rg--async-persistent-action (parsed-output)
@@ -484,7 +494,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
           helm-rg--current-dir))
 
 (defun helm-rg--get-jump-location-from-line (line)
-  "???"
+  "???/why can we assume it has this property?"
   (get-text-property 0 helm-rg--jump-location-text-property line))
 
 (defun helm-rg--display-to-real (_)
@@ -540,7 +550,7 @@ properties in helm without doing this (Sad!)"
        else do (call-interactively move-fn)))))
 
 (defun helm-rg--current-line-contents ()
-  "???"
+  "???/helm-current-line-contents doesn't get properties lol"
   (buffer-substring (point-at-bol) (point-at-eol)))
 
 (cl-defun helm-rg--nullable-states-different (a b &key (cmp #'eq))
@@ -552,7 +562,8 @@ properties in helm without doing this (Sad!)"
 (defun helm-rg--move-file (direction)
   "???/something about why there's so much indirection or how this works at least"
   (let ((cur-line (with-helm-buffer (helm-rg--current-line-contents))))
-    (cl-destructuring-bind (&key file line-num) (helm-rg--get-jump-location-from-line cur-line)
+    (cl-destructuring-bind (&key file line-num match-results)
+        (helm-rg--get-jump-location-from-line cur-line)
       (helm-rg--iterate-results
        direction
        (-lambda ((&plist :file new-file :line-num line-num))

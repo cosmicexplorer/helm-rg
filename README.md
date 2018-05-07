@@ -57,6 +57,7 @@ Example output without `--vimgrep`:
     227:  def start_delta_string(self):
     280:                'outcome', 'start_time_string', 'start_delta_string']:
 
+- color all results in the file in the async action!
 - toggle `--smart-case` like we do with glob strings
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
