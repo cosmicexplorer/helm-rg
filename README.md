@@ -61,6 +61,7 @@ Example output without `--vimgrep`:
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
         - instead, just whenever file path matches a defcustom regexp
+- fix the <kbd><left></kbd> -- they don't render correctly on github for some reason
 - toggle `--smart-case` like we do with glob strings
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
