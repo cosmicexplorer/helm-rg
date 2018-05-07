@@ -574,7 +574,10 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 (defun helm-rg--get-jump-location-from-line (line)
   "???/why can we assume it has this property?"
-  (get-text-property 0 helm-rg--jump-location-text-property line))
+  ;; When there is an empty pattern, the argument can be nil due to the way helm handles our dummy
+  ;; process. There may be a way to avoid having to do this check.
+  (when line
+    (get-text-property 0 helm-rg--jump-location-text-property line)))
 
 (defun helm-rg--display-to-real (_)
   "???/note that this doesn't use the argument at all because i don't think you can get CAND without
