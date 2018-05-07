@@ -44,6 +44,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
         - should also merge the colorations
         - [x] this might be easier without using the `--vimgrep` flag (!!!)
     - can insert markers on either side of each line to find the text added or removed!!!! (huge)
+    - **CAN CHANGE THE FILENAME BY EDITING THE FILE LINE!!!! (HUGE)**
 
 Example output without `--vimgrep`:
 
@@ -59,6 +60,7 @@ Example output without `--vimgrep`:
 
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
+        - instead, just whenever file path matches a defcustom regexp
 - toggle `--smart-case` like we do with glob strings
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
