@@ -196,6 +196,13 @@ in `helm-rg'."
   :type 'regexp
   :group 'helm-rg)
 
+(defcustom helm-rg--default-case-sensitivity 'smart-case
+  "???"
+  :type '(radio
+          (const :tag "-S, --smart-case" smart-case)
+          (const :tag "-s, --case-sensitive" case-sensitive)
+          (const :tag "-i, --ignore-case" case-insensitive))
+  :group 'helm-rg)
 
 
 ;; Faces
@@ -216,15 +223,20 @@ in `helm-rg'."
 
 
 ;; Constants
-(defconst helm-rg--base-command-args
-  '("--smart-case"
-    "--color=ansi"
+(defconst helm-rg--color-format-args
+  '("--color=ansi"
     ;; ???/explicitly set here so we can find it and highlight it in our async action
     ;; TODO: add this at the end? or make a neat interface to customize the output and just use
     ;; whatever value that provides for the match foreground color!
     "--colors=match:fg:red"
     "--colors=match:style:bold")
   "Arguments necessary for functionality on the ripgrep command line.")
+
+(defconst helm-rg--case-sensitive-argument-alist
+  '((smart-case "--smart-case")
+    (case-sensitive "--case-sensitive")
+    (case-insensitive "--ignore-case"))
+  "???")
 
 (defconst helm-rg--buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
@@ -299,9 +311,41 @@ All paths are interpreted relative to the directory ripgrep is invoked from.
 When nil, searches from the directory ripgrep is invoked from.
 See the documentation for `helm-rg-default-directory'.")
 
+(defvar helm-rg--case-sensitivity nil
+  "???")
+
+
+;; Buffer-local Variables
 (defvar-local helm-rg--process-output-parse-state
   (list :cur-file nil)
   "???")
+
+
+;; Utilities
+(defun helm-rg--alist-get-exhaustive (key alist)
+  "???"
+  (or (alist-get key alist)
+      (error "key '%s' was not found in alist '%S' during exhaustive check"
+             key alist)))
+
+(defun helm-rg--alist-keys (alist)
+  "???"
+  (cl-mapcar #'car alist))
+
+(defmacro helm-rg--get-optional-typed (type-name obj &rest body)
+  "???"
+  (declare (indent 2))
+  `(let ((it ,obj))
+     (when it
+       (cl-check-type it ,type-name)
+       ,@body)))
+
+(defmacro helm-rg--into-temp-buffer (to-insert &rest body)
+  (declare (indent 1))
+  `(with-temp-buffer
+     (insert ,to-insert)
+     (goto-char (point-min))
+     ,@body))
 
 
 ;; Logic
@@ -375,7 +419,9 @@ Uses `defcustom' values, and `defvar' values bound in other functions."
   (cons
    helm-rg-ripgrep-executable
    (append
-    helm-rg--base-command-args
+    (helm-rg--alist-get-exhaustive
+     helm-rg--case-sensitivity helm-rg--case-sensitive-argument-alist)
+    helm-rg--color-format-args
     (unless (helm-rg--empty-glob-p helm-rg--glob-string)
       (list "-g" helm-rg--glob-string))
     (list pattern)
@@ -413,14 +459,6 @@ Make a dummy process if the input is empty with a clear message to the user."
   "Delete all cached overlays in `helm-rg--current-overlays', and clear it."
   (mapc #'delete-overlay helm-rg--current-overlays)
   (setq helm-rg--current-overlays nil))
-
-(defmacro helm-rg--get-optional-typed (type-name obj &rest body)
-  "???"
-  (declare (indent 2))
-  `(let ((it ,obj))
-     (when it
-       (cl-check-type it ,type-name)
-       ,@body)))
 
 (defun helm-rg--on-file-line-p (parsed-output)
   (cl-destructuring-bind (&key file line-num match-results) parsed-output
@@ -584,18 +622,12 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 properties in helm without doing this (Sad!)"
   (helm-rg--get-jump-location-from-line (helm-get-selection nil 'withprop)))
 
-(defmacro helm-rg--into-temp-buffer (to-insert &rest body)
-  (declare (indent 1))
-  `(with-temp-buffer
-     (insert ,to-insert)
-     (goto-char (point-min))
-     ,@body))
-
 (defun helm-rg--collect-matches (regexp)
   (cl-loop while (re-search-forward regexp nil t)
            collect (match-string 1)))
 
 (defun helm-rg--pattern-transformer (pattern)
+  "???"
   (->>
    (helm-rg--into-temp-buffer pattern
      (helm-rg--collect-matches helm-rg--loop-input-pattern-regexp))
@@ -813,6 +845,19 @@ Merges stdout and stderr, and trims whitespace from the result."
     ('git-root (helm-rg--get-git-root))
     ((pred stringp) (helm-rg--check-directory-path))))
 
+(defun helm-rg--set-case-sensitivity ()
+  (interactive)
+  (let ((pat helm-pattern)
+        (start-dir helm-rg--current-dir))
+    (helm-rg--run-after-exit
+     (let* ((helm-rg--current-dir start-dir)
+            (all-sensitivity-keys
+             (helm-rg--alist-keys helm-rg--case-sensitive-argument-alist))
+            (sensitivity-selection
+             (completing-read "Choose case sensitivity: " all-sensitivity-keys nil t))
+            (helm-rg--case-sensitivity (intern sensitivity-selection)))
+       (helm-rg--do-helm-rg pat)))))
+
 
 ;; Keymap
 (defconst helm-rg-map
@@ -820,6 +865,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (set-keymap-parent map helm-map)
     (define-key map (kbd "M-g") #'helm-rg--set-glob)
     (define-key map (kbd "M-d") #'helm-rg--set-dir)
+    (define-key map (kbd "M-c") #'helm-rg--set-case-sensitivity)
     (define-key map (kbd "<right>") #'helm-rg--file-forward)
     (define-key map (kbd "<left>") #'helm-rg--file-backward)
     map)
@@ -875,7 +921,10 @@ with the interactive command `helm-rg-display-help'.
               helm-rg-default-glob-string))
          (helm-rg--paths-to-search
           (or helm-rg--paths-to-search
-              paths)))
+              paths))
+         (helm-rg--case-sensitivity
+          (or helm-rg--case-sensitivity
+              helm-rg--default-case-sensitivity)))
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
 
