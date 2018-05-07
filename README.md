@@ -39,12 +39,12 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 
 # TODO
 
-- make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
-    - needs to dedup results from the same line
-        - should also merge the colorations
+- [ ] make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
+    - [x] needs to dedup results from the same line
+        - [x] should also merge the colorations
         - [x] this might be easier without using the `--vimgrep` flag (!!!)
-    - can insert markers on either side of each line to find the text added or removed!!!! (huge)
-    - **CAN CHANGE THE FILENAME BY EDITING THE FILE LINE!!!! (HUGE)**
+    - [ ] can insert markers on either side of each line to find the text added or removed!!!! (huge)
+    - [ ] **CAN CHANGE THE FILENAME BY EDITING THE FILE LINE!!!! (HUGE)**
 
 Example output without `--vimgrep`:
 
@@ -60,8 +60,8 @@ Example output without `--vimgrep`:
 
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
-        - instead, just whenever file path matches a defcustom regexp
-- fix the <kbd><left></kbd> -- they don't render correctly on github for some reason
+        - (actually just whenever file path matches a defcustom regexp)
+- fix <kbd><left></kbd> -- this doesn't render correctly on github for some reason
 - toggle `--smart-case` like we do with glob strings
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
