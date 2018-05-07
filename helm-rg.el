@@ -392,6 +392,7 @@ Make a dummy process if the input is empty with a clear message to the user."
   (setq helm-rg--current-overlays nil))
 
 (defmacro helm-rg--get-optional-typed (type-name obj &rest body)
+  "???"
   (declare (indent 2))
   `(let ((it ,obj))
      (when it
@@ -418,7 +419,7 @@ The match is highlighted in its buffer."
                     new-buf))))
         (funcall helm-rg--display-buffer-method buffer-to-display)
         (goto-char (point-min))
-        (helm-rg--get-optional-typed number line-num
+        (helm-rg--get-optional-typed natnum line-num
           (forward-line it))
         (let* ((line-olay
                 (helm-rg--make-overlay-with-face
@@ -435,7 +436,7 @@ The match is highlighted in its buffer."
         ;; Move to the first match in the line (all lines have >= 1 match because ripgrep only
         ;; outputs matching lines).
         (let ((first-match-beginning (plist-get (car match-results) :beg)))
-          (helm-rg--get-optional-typed number first-match-beginning
+          (helm-rg--get-optional-typed natnum first-match-beginning
             (forward-char it)))
         (recenter)))))
 
