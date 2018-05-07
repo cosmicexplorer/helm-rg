@@ -399,6 +399,10 @@ Make a dummy process if the input is empty with a clear message to the user."
        (cl-check-type it ,type-name)
        ,@body)))
 
+(defun helm-rg--on-file-line-p (parsed-output)
+  (cl-destructuring-bind (&key file line-num match-results) parsed-output
+    (null line-num)))
+
 (defun helm-rg--async-action (parsed-output)
   "Visit the file at the line and column specified by CAND.
 The match is highlighted in its buffer."
@@ -560,19 +564,26 @@ properties in helm without doing this (Sad!)"
       (not (and b (funcall cmp a b)))
     b))
 
+(defun helm-rg--on-same-entry (orig-line-parsed cur-line-parsed)
+  (let ((orig-file (plist-get orig-line-parsed :file))
+        (cur-file (plist-get cur-line-parsed :file))
+        (orig-line-num (plist-get orig-line-parsed :line-num))
+        (cur-line-num (plist-get cur-line-parsed :line-num)))
+    (and (not (helm-rg--nullable-states-different orig-file cur-file :cmp #'string=))
+         (not (helm-rg--nullable-states-different orig-line-num cur-line-num :cmp #'=)))))
+
 (defun helm-rg--move-file (direction)
   "???/something about why there's so much indirection or how this works at least"
-  (let ((cur-line (with-helm-buffer (helm-rg--current-line-contents))))
-    (cl-destructuring-bind (&key file line-num match-results)
-        (helm-rg--get-jump-location-from-line cur-line)
-      (helm-rg--iterate-results
-       direction
-       (-lambda ((&plist :file new-file :line-num line-num))
-         ;; TODO: is this ok??? it seems to be
-         (null line-num))
-       (-lambda ((&plist :file new-file :line-num new-line-num))
-         (and (not (helm-rg--nullable-states-different new-file file :cmp #'string=))
-              (not (helm-rg--nullable-states-different new-line-num line-num :cmp #'=))))))))
+  (let* ((orig-line
+          ;; TODO: do we need `with-helm-buffer' here?
+          (with-helm-buffer (helm-rg--current-line-contents)))
+         (orig-line-parsed (helm-rg--get-jump-location-from-line orig-line)))
+    (helm-rg--iterate-results
+     direction
+     #'helm-rg--on-file-line-p
+     ;; TODO: with the new method of having the files as their own line, will this ever get called?
+     (lambda (cur-line-parsed)
+       (helm-rg--on-same-entry orig-line-parsed cur-line-parsed)))))
 
 (defun helm-rg--file-forward ()
   (interactive)
