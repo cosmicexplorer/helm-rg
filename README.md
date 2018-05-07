@@ -45,6 +45,8 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
         - [x] this might be easier without using the `--vimgrep` flag (!!!)
     - [ ] can insert markers on either side of each line to find the text added or removed!!!! (huge)
     - [ ] **CAN CHANGE THE FILENAME BY EDITING THE FILE LINE!!!! (HUGE)**
+    - [ ] can expand the windows of text beyond single lines at a time
+        - and pop into another buffer for a quick view if you want
 
 Example output without `--vimgrep`:
 
@@ -64,8 +66,6 @@ Example output without `--vimgrep`:
 - [ ] fix <kbd><left></kbd> -- this doesn't render correctly on github for some reason
 - [x] toggle `--smart-case` like we do with glob strings
     - see `helm-rg-default-case-sensitivity` and friends
-- [ ] allow (elisp)? regex searching of search results, including file names
-    - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
 - [ ] publish `update-commentary.el` and the associated machinery as an npm package
 - [ ] make a keybinding for running `helm-rg` on dired marked files
     - then you could do an `f3` search, bounce to dired, then immediately `helm-rg` on just the file paths from the `f3` search, *which would be sick*
