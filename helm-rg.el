@@ -127,7 +127,7 @@
   "Use as a :safe predicate in a `defcustom' form to accept any local override."
   t)
 
-(defun helm-rg--gen-defcustom-form (name alist doc args)
+(defun helm-rg--gen-defcustom-form-from-alist (name alist doc args)
   `(defcustom ,name ',(car (helm-rg--alist-keys (symbol-value alist)))
      ,doc
      :type `(radio ,@(--map `(const ,it) (helm-rg--alist-keys ,alist)))
@@ -135,9 +135,12 @@
      ,@args))
 
 (defmacro helm-rg--defcustom-from-alist (name alist doc &rest args)
-  "???"
+  "Create a `defcustom' named NAME which allows the keys of ALIST as values.
+
+The default value for the `defcustom' is the `car' of the first element of ALIST. ALIST must be the
+unquoted name of a variable containing an alist."
   (declare (indent 2))
-  (helm-rg--gen-defcustom-form name alist doc args))
+  (helm-rg--gen-defcustom-form-from-alist name alist doc args))
 
 
 ;; Customization
@@ -204,7 +207,11 @@ in `helm-rg'."
   :group 'helm-rg)
 
 (defcustom helm-rg--only-current-line-match-highlight-files-regexp nil
-  "???/see `helm-rg--collect-lines-matches-current-file'"
+  "By default, `helm-rg' will create overlays to highlight all the matches from ripgrep in a file
+when previewing a result. This is done each time a match is selected, even for buffers already
+previewed. Creating these overlays can be slow for files with lots of matches in some search. If this
+variable is set to an elisp regexp and some file path matches it, `helm-rg' will only highlight the
+current line of the file and the matches in that line when previewing that file."
   :type 'regexp
   :group 'helm-rg)
 
@@ -229,24 +236,21 @@ in `helm-rg'."
 ;; Constants
 (defconst helm-rg--color-format-argument-alist
   '((red :cmd-line "red" :text-property "red3"))
-  "???")
+  "Alist mapping (a symbol named after a color) -> (strings to describe that symbol on the ripgrep
+command line and in an emacs text property). This allows `helm-rg' to identify matched text using
+ripgrep's highlighted output directly instead of doing it ourselves, by telling ripgrep to highlight
+matches a specific color, then searching for that specific color as a text property in the output.")
 
 (defconst helm-rg--style-format-argument-alist
   '((bold :cmd-line "bold" :text-property bold))
-  "???")
-
-(defconst helm-rg--color-format-args
-  ;; ???/explicitly set here so we can find it and highlight it in our async action
-  ;; TODO: add this at the end? or make a neat interface to customize the output and just use
-  ;; whatever value that provides for the match foreground color!
-  '("--color=ansi")
-  "???/Arguments necessary for functionality on the ripgrep command line.")
+  "Very similar to `helm-rg--color-format-argument-alist', but for non-color styling.")
 
 (defconst helm-rg--case-sensitive-argument-alist
   '((smart-case "--smart-case")
     (case-sensitive "--case-sensitive")
     (case-insensitive "--ignore-case"))
-  "???")
+  "Alist of methods of treating case-sensitivity when invoking ripgrep. The value is the ripgrep
+command-line argument which enforces the specified type of case-sensitivity.")
 
 (defconst helm-rg--buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
@@ -259,14 +263,18 @@ in `helm-rg'."
 
 (defconst helm-rg--output-new-file-line-regexp
   (rx (: bos (group (+? (not (any 0)))) eos))
-  "???")
+  "Regexp for ripgrep output which marks the start of results for a new file.
+
+See `helm-rg--process-transition' for usage.")
 
 (defconst helm-rg--numbered-text-line-regexp
   (rx (: bos
          (: (group (+ digit)) ":"
             (group (*? anything)))
          eos))
-  "???")
+  "Regexp for ripgrep output which marks a matched line, with he line number and content.
+
+See `helm-rg--process-transition' for usage.")
 
 (defconst helm-rg--persistent-action-display-buffer-method #'switch-to-buffer
   "A function accepting a single argument BUF and displaying the buffer.
@@ -286,7 +294,8 @@ Let-bound to `helm-rg--display-buffer-method' in `helm-rg--async-persistent-acti
   "Regexp applied iteratively to split the input interpreted by `helm-rg'.")
 
 (defconst helm-rg--jump-location-text-property 'helm-rg-jump-to
-  "???")
+  "Name of a text property attached to the colorized ripgrep output.
+This text property contains location and match info. See `helm-rg--process-transition' for usage.")
 
 
 ;; Variables
@@ -322,28 +331,31 @@ When nil, searches from the directory ripgrep is invoked from.
 See the documentation for `helm-rg-default-directory'.")
 
 (defvar helm-rg--case-sensitivity nil
-  "???")
+  "Key of `helm-rg--case-sensitive-argument-alist' to use in a `helm-rg' session.")
 
 
 ;; Buffer-local Variables
 (defvar-local helm-rg--process-output-parse-state
   (list :cur-file nil)
-  "???")
+  "Contains state which is updated as the ripgrep output is processed.
+
+This is buffer-local because it is specific to a single process invocation and is manipulated in
+that process's buffer. See `helm-rg--parse-process-output' for usage.")
 
 
 ;; Utilities
 (defun helm-rg--alist-get-exhaustive (key alist)
-  "???"
+  "Get KEY from ALIST, or throw an error."
   (or (alist-get key alist)
       (error "key '%s' was not found in alist '%S' during exhaustive check"
              key alist)))
 
 (defun helm-rg--alist-keys (alist)
-  "???"
+  "Get all keys of ALIST."
   (cl-mapcar #'car alist))
 
 (defmacro helm-rg--get-optional-typed (type-name obj &rest body)
-  "???"
+  "If OBJ is non-nil, check its type against TYPE-NAME, then bind it to `it' and execute BODY."
   (declare (indent 2))
   `(let ((it ,obj))
      (when it
@@ -351,6 +363,7 @@ See the documentation for `helm-rg-default-directory'.")
        ,@body)))
 
 (defmacro helm-rg--into-temp-buffer (to-insert &rest body)
+  "Execute BODY at the beginning of a `with-temp-buffer' containing TO-INSERT."
   (declare (indent 1))
   `(with-temp-buffer
      (insert ,to-insert)
@@ -430,7 +443,7 @@ Uses `defcustom' values, and `defvar' values bound in other functions."
    helm-rg-ripgrep-executable
    (append
     (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity helm-rg--case-sensitive-argument-alist)
-    helm-rg--color-format-args
+    '("--color=ansi")
     (helm-rg--construct-match-color-format-arguments helm-rg-match-color helm-rg-match-style)
     (unless (helm-rg--empty-glob-p helm-rg--glob-string)
       (list "-g" helm-rg--glob-string))
@@ -475,7 +488,7 @@ Make a dummy process if the input is empty with a clear message to the user."
     (null line-num)))
 
 (defun helm-rg--collect-lines-matches-current-file (orig-line-parsed file-abs-path)
-  "???"
+  "Collect all matches from ripgrep's highlighted output from from FILE-ABS-PATH."
   ;; If we are on a file's line, stay where we are, otherwise back up to the closest file line above
   ;; the current line (this is the file that "owns" the entry).
   (let ((orig-file (plist-get orig-line-parsed :file)))
@@ -490,7 +503,7 @@ Make a dummy process if the input is empty with a clear message to the user."
         (save-excursion
           (if (helm-rg--on-file-line-p orig-line-parsed)
               (beginning-of-line)
-            ;; go back to owning file
+            ;; Go back to the owning file's line.
             (re-search-backward (rx (: bol (not digit)))))
           (cl-loop
            do (forward-line 1)
@@ -624,15 +637,17 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
           helm-rg--current-dir))
 
 (defun helm-rg--get-jump-location-from-line (line)
-  "???/why can we assume it has this property?"
+  "Get the value of `helm-rg--jump-location-text-property' at the start of LINE."
   ;; When there is an empty pattern, the argument can be nil due to the way helm handles our dummy
   ;; process. There may be a way to avoid having to do this check.
   (when line
     (get-text-property 0 helm-rg--jump-location-text-property line)))
 
 (defun helm-rg--display-to-real (_)
-  "???/note that this doesn't use the argument at all because i don't think you can get CAND without
-properties in helm without doing this (Sad!)"
+  "Extract the information from the process filter stored in the current entry's text properties.
+
+Note that this doesn't use the argument at all. I don't think you can get the currently selected
+line without the text properties scrubbed using helm without doing this."
   (helm-rg--get-jump-location-from-line (helm-get-selection nil 'withprop)))
 
 (defun helm-rg--collect-matches (regexp)
@@ -640,13 +655,25 @@ properties in helm without doing this (Sad!)"
            collect (match-string 1)))
 
 (defun helm-rg--pattern-transformer (pattern)
-  "???"
+  "Transform PATTERN (the `helm-input') into a Perl-compatible regular expression."
+  ;; For example: "a  b c" => "a b.*c|c.*a b".
   (->>
+   ;; Split the pattern into our definition of "components". Suppose PATTERN is "a  b c". Then:
+   ;; "a  b c" => '("a  b" "c")
    (helm-rg--into-temp-buffer pattern
      (helm-rg--collect-matches helm-rg--loop-input-pattern-regexp))
+   ;; Two spaces in a row becomes a single space in the output regexp. Each component is now a
+   ;; regexp.
+   ;; '("a  b" "c") => '("a b" "c")
    (--map (replace-regexp-in-string (rx (= 2 ? )) " " it))
+   ;; All permutations of all component regexps.
+   ;; '("a b" "c") => '(("a b" "c") ("c" "a b"))
    (-permutations)
+   ;; Each permutation is converted into a regexp which matches a line containing each regexp in
+   ;; the permutation in order, each separated by 0 or more non-newline characters.
+   ;; '(("a b" "c") ("c" "a b")) => '("a  b.*c" "c.*a  b")
    (--map (helm-rg--join ".*" it))
+   ;; '("a  b.*c" "c.*a  b") => "a b.*c|c.*a b"
    (helm-rg--join "|")))
 
 (defun helm-rg--advance-forward ()
@@ -677,11 +704,18 @@ properties in helm without doing this (Sad!)"
        else do (call-interactively move-fn)))))
 
 (defun helm-rg--current-line-contents ()
-  "???/helm-current-line-contents doesn't get properties lol"
+  "`helm-current-line-contents' doesn't keep text properties."
   (buffer-substring (point-at-bol) (point-at-eol)))
 
 (cl-defun helm-rg--nullable-states-different (a b &key (cmp #'eq))
-  "???"
+  "Compare A and B respecting nullability using CMP.
+
+When CMP is `string=', the following results:
+(A=nil, B=nil) => nil
+(A=\"a\", B=nil) => t
+(A=nil, B=\"a\") => t
+(A=\"a\", B=\"a\") => nil
+(A=\"a\", B=\"b\") => t"
   (if a
       (not (and b (funcall cmp a b)))
     b))
@@ -695,15 +729,14 @@ properties in helm without doing this (Sad!)"
          (not (helm-rg--nullable-states-different orig-line-num cur-line-num :cmp #'=)))))
 
 (defun helm-rg--move-file (direction)
-  "???/something about why there's so much indirection or how this works at least"
-  (let* ((orig-line
-          ;; TODO: do we need `with-helm-buffer' here?
-          (with-helm-buffer (helm-rg--current-line-contents)))
+  "Move through matching lines from ripgrep in the given DIRECTION.
+
+This will loop around the results when advancing past the beginning or end of the results."
+  (let* ((orig-line (helm-rg--current-line-contents))
          (orig-line-parsed (helm-rg--get-jump-location-from-line orig-line)))
     (helm-rg--iterate-results
      direction
      #'helm-rg--on-file-line-p
-     ;; TODO: with the new method of having the files as their own line, will this ever get called?
      (lambda (cur-line-parsed)
        (helm-rg--on-same-entry orig-line-parsed cur-line-parsed)))))
 
@@ -832,6 +865,11 @@ Merges stdout and stderr, and trims whitespace from the result."
         (error "line '%s' could not be parsed! state was: '%S'"
                colored-line helm-rg--process-output-parse-state)))))
 
+(defun helm-rg--edit-results ()
+  (interactive)
+  ;;
+  )
+
 
 ;; Toggles and settings
 (defmacro helm-rg--run-after-exit (&rest body)
@@ -898,6 +936,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (define-key map (kbd "M-g") #'helm-rg--set-glob)
     (define-key map (kbd "M-d") #'helm-rg--set-dir)
     (define-key map (kbd "M-c") #'helm-rg--set-case-sensitivity)
+    (define-key map (kbd "M-e") #'helm-rg--edit-results)
     (define-key map (kbd "<right>") #'helm-rg--file-forward)
     (define-key map (kbd "<left>") #'helm-rg--file-backward)
     map)
@@ -926,13 +965,24 @@ Merges stdout and stderr, and trims whitespace from the result."
 ;; Meta-programmed Defcustom Forms
 (helm-rg--defcustom-from-alist helm-rg-default-case-sensitivity
     helm-rg--case-sensitive-argument-alist
-  "???")
+  "Case sensitivity to use in ripgrep searches.
+
+This is the default value for `helm-rg--case-sensitivity', which can be modified with
+`helm-rg--set-case-sensitivity' during a `helm-rg' session.
+
+This must be an element of `helm-rg--case-sensitive-argument-alist'.")
 
 (helm-rg--defcustom-from-alist helm-rg-match-color helm-rg--color-format-argument-alist
-  "???")
+  "Color to use for match results from ripgrep.
+
+This must be synchronized between ripgrep and elisp so that `helm-rg' can parse the match locations
+from the ripgrep highlights, so it must be an element of `helm-rg--color-format-argument-alist'.")
 
 (helm-rg--defcustom-from-alist helm-rg-match-style helm-rg--style-format-argument-alist
-  "???")
+  "Style to use for match results from ripgrep.
+
+This must be synchronized between ripgrep and elisp so that `helm-rg' can parse the match locations
+from the ripgrep highlights, so it must be an element of `helm-rg--style-format-argument-alist'.")
 
 
 ;; Autoloaded functions
