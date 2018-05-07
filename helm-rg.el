@@ -344,8 +344,16 @@ See the documentation for `helm-rg-default-directory'.")
      "%s"
      (propertize ")" 'face 'highlight)))))
 
+(cl-deftype helm-rg--existing-file ()
+  `(and string
+        (satisfies file-exists-p)))
+
+(cl-deftype helm-rg--existing-directory ()
+  `(and helm-rg--existing-file
+        (satisfies file-directory-p)))
+
 (defun helm-rg--process-paths-to-search (paths)
-  (cl-check-type helm-rg--current-dir string)
+  (cl-check-type helm-rg--current-dir helm-rg--existing-directory)
   (cl-loop
    for path in paths
    for expanded = (expand-file-name path helm-rg--current-dir)
