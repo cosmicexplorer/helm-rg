@@ -122,10 +122,22 @@
 (require 'rx)
 
 
-;; Helpers
+;; Customization Helpers
 (defun helm-rg--always-safe-local (_)
   "Use as a :safe predicate in a `defcustom' form to accept any local override."
   t)
+
+(defun helm-rg--gen-defcustom-form (name alist doc args)
+  `(defcustom ,name ',(car (helm-rg--alist-keys (symbol-value alist)))
+     ,doc
+     :type `(radio ,@(--map `(const ,it) (helm-rg--alist-keys ,alist)))
+     :group 'helm-rg
+     ,@args))
+
+(defmacro helm-rg--defcustom-from-alist (name alist doc &rest args)
+  "???"
+  (declare (indent 2))
+  (helm-rg--gen-defcustom-form name alist doc args))
 
 
 ;; Customization
@@ -196,14 +208,6 @@ in `helm-rg'."
   :type 'regexp
   :group 'helm-rg)
 
-(defcustom helm-rg--default-case-sensitivity 'smart-case
-  "???"
-  :type '(radio
-          (const :tag "-S, --smart-case" smart-case)
-          (const :tag "-s, --case-sensitive" case-sensitive)
-          (const :tag "-i, --ignore-case" case-insensitive))
-  :group 'helm-rg)
-
 
 ;; Faces
 (defface helm-rg-preview-line-highlight
@@ -223,14 +227,20 @@ in `helm-rg'."
 
 
 ;; Constants
+(defconst helm-rg--color-format-argument-alist
+  '((red :cmd-line "red" :text-property "red3"))
+  "???")
+
+(defconst helm-rg--style-format-argument-alist
+  '((bold :cmd-line "bold" :text-property bold))
+  "???")
+
 (defconst helm-rg--color-format-args
-  '("--color=ansi"
-    ;; ???/explicitly set here so we can find it and highlight it in our async action
-    ;; TODO: add this at the end? or make a neat interface to customize the output and just use
-    ;; whatever value that provides for the match foreground color!
-    "--colors=match:fg:red"
-    "--colors=match:style:bold")
-  "Arguments necessary for functionality on the ripgrep command line.")
+  ;; ???/explicitly set here so we can find it and highlight it in our async action
+  ;; TODO: add this at the end? or make a neat interface to customize the output and just use
+  ;; whatever value that provides for the match foreground color!
+  '("--color=ansi")
+  "???/Arguments necessary for functionality on the ripgrep command line.")
 
 (defconst helm-rg--case-sensitive-argument-alist
   '((smart-case "--smart-case")
@@ -419,9 +429,9 @@ Uses `defcustom' values, and `defvar' values bound in other functions."
   (cons
    helm-rg-ripgrep-executable
    (append
-    (helm-rg--alist-get-exhaustive
-     helm-rg--case-sensitivity helm-rg--case-sensitive-argument-alist)
+    (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity helm-rg--case-sensitive-argument-alist)
     helm-rg--color-format-args
+    (helm-rg--construct-match-color-format-arguments helm-rg-match-color helm-rg-match-style)
     (unless (helm-rg--empty-glob-p helm-rg--glob-string)
       (list "-g" helm-rg--glob-string))
     (list pattern)
@@ -589,7 +599,10 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
   (helm-rg--kill-proc-if-live helm-rg--process-name)
   (helm-rg--kill-bufs-if-live helm-rg--buffer-name
                               helm-rg--process-buffer-name
-                              helm-rg--error-buffer-name))
+                              helm-rg--error-buffer-name)
+  (setq helm-rg--glob-string nil
+        helm-rg--paths-to-search nil
+        helm-rg--case-sensitivity nil))
 
 (defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
@@ -728,9 +741,28 @@ Merges stdout and stderr, and trims whitespace from the result."
     (read-only-mode 1)
     (current-buffer)))
 
+(defun helm-rg--lookup-color (color)
+  (helm-rg--alist-get-exhaustive color helm-rg--color-format-argument-alist))
+
+(defun helm-rg--lookup-style (style)
+  (helm-rg--alist-get-exhaustive style helm-rg--style-format-argument-alist))
+
+(defun helm-rg--construct-match-color-format-arguments (color style)
+  (list
+   (format "--colors=match:fg:%s"
+           (plist-get (helm-rg--lookup-color color) :cmd-line))
+   (format "--colors=match:style:%s"
+           (plist-get (helm-rg--lookup-style style) :cmd-line))))
+
+(defun helm-rg--construct-match-text-properties (color style)
+  `(,(plist-get (helm-rg--lookup-style style) :text-property)
+    (foreground-color . ,(plist-get (helm-rg--lookup-color color) :text-property))))
+
 (defun helm-rg--is-match (position object)
-  (equal (get-text-property position 'font-lock-face object)
-         '(bold (foreground-color . "red3"))))
+  (let ((text-props-for-position (get-text-property position 'font-lock-face object))
+        (text-props-for-match
+         (helm-rg--construct-match-text-properties helm-rg-match-color helm-rg-match-style)))
+    (equal text-props-for-position text-props-for-match)))
 
 (defun helm-rg--first-match-start-ripgrep-output (position match-line &optional find-end)
   (cl-loop
@@ -891,6 +923,18 @@ Merges stdout and stderr, and trims whitespace from the result."
   "Helm async source to search files in a directory using ripgrep.")
 
 
+;; Meta-programmed Defcustom Forms
+(helm-rg--defcustom-from-alist helm-rg-default-case-sensitivity
+    helm-rg--case-sensitive-argument-alist
+  "???")
+
+(helm-rg--defcustom-from-alist helm-rg-match-color helm-rg--color-format-argument-alist
+  "???")
+
+(helm-rg--defcustom-from-alist helm-rg-match-style helm-rg--style-format-argument-alist
+  "???")
+
+
 ;; Autoloaded functions
 ;;;###autoload
 (defun helm-rg (rg-pattern &optional pfx paths)
@@ -924,7 +968,7 @@ with the interactive command `helm-rg-display-help'.
               paths))
          (helm-rg--case-sensitivity
           (or helm-rg--case-sensitivity
-              helm-rg--default-case-sensitivity)))
+              helm-rg-default-case-sensitivity)))
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
 
