@@ -191,6 +191,11 @@ in `helm-rg'."
   :type 'function
   :group 'helm-rg)
 
+(defcustom helm-rg--only-current-line-match-highlight-files-regexp nil
+  "???/see `helm-rg--collect-lines-matches-current-file'"
+  :type 'regexp
+  :group 'helm-rg)
+
 
 
 ;; Faces
@@ -403,29 +408,36 @@ Make a dummy process if the input is empty with a clear message to the user."
   (cl-destructuring-bind (&key file line-num match-results) parsed-output
     (null line-num)))
 
-(defun helm-rg--collect-lines-matches-current-file (orig-line-parsed)
+(defun helm-rg--collect-lines-matches-current-file (orig-line-parsed file-abs-path)
   "???"
   ;; If we are on a file's line, stay where we are, otherwise back up to the closest file line above
   ;; the current line (this is the file that "owns" the entry).
   (let ((orig-file (plist-get orig-line-parsed :file)))
-    (with-helm-buffer
-      (save-excursion
-        (if (helm-rg--on-file-line-p orig-line-parsed)
-            (beginning-of-line)
-          ;; go back to owning file
-          (re-search-backward (rx (: bol (not digit)))))
-        (cl-loop
-         do (forward-line 1)
-         for cur-line = (helm-rg--current-line-contents)
-         for result = (helm-rg--process-transition orig-file cur-line)
-         for line-content = (plist-get result :line-content)
-         while line-content
-         for parsed-line = (helm-rg--get-jump-location-from-line line-content)
-         for match-results = (plist-get parsed-line :match-results)
-         while match-results
-         do (cl-assert (string= orig-file (plist-get result :file-path)))
-         for line-num = (plist-get parsed-line :line-num)
-         collect (list :match-line-num line-num :line-match-results match-results))))))
+    ;; If the file path matches `helm-rg--only-current-line-match-highlight-files-regexp', just
+    ;; highlight the matches for the current line, if not on a file line.
+    (if (and (stringp helm-rg--only-current-line-match-highlight-files-regexp)
+             (string-match-p helm-rg--only-current-line-match-highlight-files-regexp file-abs-path))
+        (list (list :match-line-num (plist-get orig-line-parsed :line-num)
+                    :line-match-results (plist-get orig-line-parsed :match-results)))
+      ;; Otherwise, collect all the results on all matching lines of the file.
+      (with-helm-buffer
+        (save-excursion
+          (if (helm-rg--on-file-line-p orig-line-parsed)
+              (beginning-of-line)
+            ;; go back to owning file
+            (re-search-backward (rx (: bol (not digit)))))
+          (cl-loop
+           do (forward-line 1)
+           for cur-line = (helm-rg--current-line-contents)
+           for result = (helm-rg--process-transition orig-file cur-line)
+           for line-content = (plist-get result :line-content)
+           while line-content
+           for parsed-line = (helm-rg--get-jump-location-from-line line-content)
+           for match-results = (plist-get parsed-line :match-results)
+           while match-results
+           do (cl-assert (string= orig-file (plist-get result :file-path)))
+           for line-num = (plist-get parsed-line :line-num)
+           collect (list :match-line-num line-num :line-match-results match-results)))))))
 
 (defun helm-rg--convert-lines-matches-to-overlays (line-match-results)
   (beginning-of-line)
@@ -470,18 +482,17 @@ The match is highlighted in its buffer."
                     (when helm-rg--append-persistent-buffers
                       (push new-buf helm-rg--cur-persistent-bufs))
                     new-buf)))
-             (cur-file-matches (helm-rg--collect-lines-matches-current-file parsed-output)))
+             (cur-file-matches
+              (helm-rg--collect-lines-matches-current-file parsed-output file-abs-path)))
         (funcall helm-rg--display-buffer-method buffer-to-display)
         (let ((match-olays (helm-rg--make-match-overlays-for-result cur-file-matches)))
           (goto-char (point-min))
           (helm-rg--get-optional-typed natnum line-num
             (forward-line it))
           (let ((line-olay
-                 (helm-rg--make-overlay-with-face
-                  (line-beginning-position) (line-end-position)
-                  'helm-rg-preview-line-highlight)))
-            (setq helm-rg--current-overlays
-                  (cons line-olay match-olays))))
+                 (helm-rg--make-overlay-with-face (line-beginning-position) (line-end-position)
+                                                  'helm-rg-preview-line-highlight)))
+            (setq helm-rg--current-overlays (cons line-olay match-olays))))
         ;; Move to the first match in the line (all lines have >= 1 match because ripgrep only
         ;; outputs matching lines).
         (let ((first-match-beginning (plist-get (car match-results) :beg)))

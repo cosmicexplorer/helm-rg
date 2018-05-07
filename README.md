@@ -42,7 +42,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 - make a keybinding to drop into an edit mode and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
     - needs to dedup results from the same line
         - should also merge the colorations
-        - this might be easier without using the `--vimgrep` flag (!!!)
+        - [x] this might be easier without using the `--vimgrep` flag (!!!)
     - can insert markers on either side of each line to find the text added or removed!!!! (huge)
 
 Example output without `--vimgrep`:
@@ -57,7 +57,8 @@ Example output without `--vimgrep`:
     227:  def start_delta_string(self):
     280:                'outcome', 'start_time_string', 'start_delta_string']:
 
-- color all results in the file in the async action!
+- [x] color all results in the file in the async action!
+    - [x] don't recolor when switching to a different result in the same file!
 - toggle `--smart-case` like we do with glob strings
 - allow (elisp)? regex searching of search results, including file names
     - use [`helm-swoop`](https://github.com/ShingoFukuyama/helm-swoop)?
