@@ -63,7 +63,6 @@ Example output without `--vimgrep`:
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
         - (actually just whenever file path matches a defcustom regexp)
-- [ ] fix <kbd><left></kbd> -- this doesn't render correctly on github for some reason
 - [x] toggle `--smart-case` like we do with glob strings
     - see `helm-rg-default-case-sensitivity` and friends
 - [ ] publish `update-commentary.el` and the associated machinery as an npm package
