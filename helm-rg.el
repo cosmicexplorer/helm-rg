@@ -249,8 +249,10 @@ matches a specific color, then searching for that specific color as a text prope
   '((smart-case "--smart-case")
     (case-sensitive "--case-sensitive")
     (case-insensitive "--ignore-case"))
-  "Alist of methods of treating case-sensitivity when invoking ripgrep. The value is the ripgrep
-command-line argument which enforces the specified type of case-sensitivity.")
+  "Alist of methods of treating case-sensitivity when invoking ripgrep.
+
+The value is the ripgrep command-line argument which enforces the specified type of
+case-sensitivity.")
 
 (defconst helm-rg--buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
@@ -819,9 +821,6 @@ Merges stdout and stderr, and trims whitespace from the result."
    do (setq line-char-index match-end)
    collect (list :beg match-beg :end match-end)))
 
-;;; TODO: make the file line jump to the top of the file!
-;;; TODO: make the numbers and file names readonly (or even make the numbers in
-;;; a fringe and make the file unsearchable/uneditable?
 (defun helm-rg--process-transition (cur-file line)
   (cond
    ((string= line "") (list :file-path nil))
@@ -854,7 +853,6 @@ Merges stdout and stderr, and trims whitespace from the result."
             :rest (buffer-string)))))
 
 (defun helm-rg--parse-process-output (input-line)
-  ;; TODO: in helm-buffer?
   (let ((colored-line (ansi-color-apply input-line)))
     (cl-destructuring-bind (&key cur-file) helm-rg--process-output-parse-state
       (if-let ((parsed (helm-rg--process-transition cur-file colored-line)))
@@ -920,6 +918,8 @@ Merges stdout and stderr, and trims whitespace from the result."
   (let ((pat helm-pattern)
         (start-dir helm-rg--current-dir))
     (helm-rg--run-after-exit
+     ;; TODO: see if all of this rebinding of the defvars is necessary, and if it must occur then
+     ;; make it part of the `helm-rg--run-after-exit' macro.
      (let* ((helm-rg--current-dir start-dir)
             (all-sensitivity-keys
              (helm-rg--alist-keys helm-rg--case-sensitive-argument-alist))
@@ -945,6 +945,9 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 ;; Helm sources
 (defconst helm-rg-process-source
+  ;; `helm-grep-ag-class' is provided by `helm' -- I don't know if that identifier is stable but if
+  ;; it's not it will error out very quickly (because `helm-make-source' will fail if that symbol
+  ;; is removed).
   (helm-make-source "ripgrep" 'helm-grep-ag-class
     :header-name #'helm-rg--header-name
     :keymap 'helm-rg-map
@@ -962,7 +965,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   "Helm async source to search files in a directory using ripgrep.")
 
 
-;; Meta-programmed Defcustom Forms
+;; Meta-programmed defcustom forms
 (helm-rg--defcustom-from-alist helm-rg-default-case-sensitivity
     helm-rg--case-sensitive-argument-alist
   "Case sensitivity to use in ripgrep searches.
