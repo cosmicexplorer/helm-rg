@@ -65,7 +65,8 @@ Example output without `--vimgrep`:
         - (actually just whenever file path matches a defcustom regexp)
 - [x] toggle `--smart-case` like we do with glob strings
     - see `helm-rg-default-case-sensitivity` and friends
-- [ ] publish `update-commentary.el` and the associated machinery as an npm package
+- [ ] publish `update-commentary.el` and the associated machinery
+    - as an npm package, MELPA package, pandoc writer, ???
 - [ ] make a keybinding for running `helm-rg` on dired marked files
     - then you could do an `f3` search, bounce to dired, then immediately `helm-rg` on just the file paths from the `f3` search, *which would be sick*
 
