@@ -192,7 +192,7 @@ Used in `helm-rg--interpret-starting-dir'. Possible values:
   :type 'symbol
   :group 'helm-rg)
 
-(defcustom helm-rg-input-min-search-chars 3
+(defcustom helm-rg-input-min-search-chars 2
   "Ripgrep will not be invoked unless the input is at least this many chars.
 
 See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
