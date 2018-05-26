@@ -143,6 +143,16 @@ unquoted name of a variable containing an alist."
   (helm-rg--gen-defcustom-form-from-alist name alist doc args))
 
 
+;; CL deftypes
+(cl-deftype helm-rg--existing-file ()
+  `(and string
+        (satisfies file-exists-p)))
+
+(cl-deftype helm-rg--existing-directory ()
+  `(and helm-rg--existing-file
+        (satisfies file-directory-p)))
+
+
 ;; Customization
 (defgroup helm-rg nil
   "Group for `helm-rg' customizations."
@@ -412,14 +422,6 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
      (propertize "(" 'face 'highlight)
      "%s"
      (propertize ")" 'face 'highlight)))))
-
-(cl-deftype helm-rg--existing-file ()
-  `(and string
-        (satisfies file-exists-p)))
-
-(cl-deftype helm-rg--existing-directory ()
-  `(and helm-rg--existing-file
-        (satisfies file-directory-p)))
 
 (defun helm-rg--process-paths-to-search (paths)
   (cl-check-type helm-rg--current-dir helm-rg--existing-directory)
