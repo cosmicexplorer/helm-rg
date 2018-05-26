@@ -659,7 +659,9 @@ line without the text properties scrubbed using helm without doing this."
            collect (match-string 1)))
 
 (defun helm-rg--pattern-transformer (pattern)
-  "Transform PATTERN (the `helm-input') into a Perl-compatible regular expression."
+  "Transform PATTERN (the `helm-input') into a Perl-compatible regular expression.
+
+TODO: add ert testing for this function!"
   ;; For example: "a  b c" => "a b.*c|c.*a b".
   (->>
    ;; Split the pattern into our definition of "components". Suppose PATTERN is "a  b c". Then:
@@ -677,6 +679,7 @@ line without the text properties scrubbed using helm without doing this."
    ;; the permutation in order, each separated by 0 or more non-newline characters.
    ;; '(("a b" "c") ("c" "a b")) => '("a  b.*c" "c.*a  b")
    (--map (helm-rg--join ".*" it))
+   ;; Return a regexp which matches any of the resulting regexps.
    ;; '("a  b.*c" "c.*a  b") => "a b.*c|c.*a b"
    (helm-rg--join "|")))
 
@@ -719,7 +722,9 @@ When CMP is `string=', the following results:
 (A=\"a\", B=nil) => t
 (A=nil, B=\"a\") => t
 (A=\"a\", B=\"a\") => nil
-(A=\"a\", B=\"b\") => t"
+(A=\"a\", B=\"b\") => t
+
+TODO: throw the above into an ert test!"
   (if a
       (not (and b (funcall cmp a b)))
     b))
@@ -864,11 +869,6 @@ Merges stdout and stderr, and trims whitespace from the result."
             (or line-content ""))
         (error "line '%s' could not be parsed! state was: '%S'"
                colored-line helm-rg--process-output-parse-state)))))
-
-(defun helm-rg--edit-results ()
-  (interactive)
-  ;;
-  )
 
 
 ;; Toggles and settings
