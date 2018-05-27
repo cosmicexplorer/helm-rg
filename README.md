@@ -50,6 +50,10 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 - [x] color all results in the file in the async action!
     - [ ] don't recolor when switching to a different result in the same file!
         - (actually just whenever file path matches a defcustom regexp)
+- [ ] use `ripgrep` file types instead of flattening globbing out into `helm-rg-default-glob-string`
+    - user defines file types in a `defcustom`, and can interactively toggle the accepted file types
+    - user can also set the default set of file types
+        - as a dir-local variable!!
 - [ ] add testing
   - [ ] should be testing all of our interactive functions
       - in all configurations (for all permutations of `defcustom` values)

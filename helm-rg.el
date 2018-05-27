@@ -110,6 +110,12 @@
 ;;     - [ ] don't recolor when switching to a different result in the same
 ;; file!
 ;;         - (actually just whenever file path matches a defcustom regexp)
+;; - [ ] use `ripgrep' file types instead of flattening globbing out into
+;; `helm-rg-default-glob-string'
+;;     - user defines file types in a `defcustom', and can interactively toggle
+;; the accepted file types
+;;     - user can also set the default set of file types
+;;         - as a dir-local variable!!
 ;; - [ ] add testing
 ;;   - [ ] should be testing all of our interactive functions
 ;;       - in all configurations (for all permutations of `defcustom' values)
@@ -215,6 +221,7 @@ Used in `helm-rg--interpret-starting-dir'. Possible values:
 (defcustom helm-rg-thing-at-point 'symbol
   "Type of object at point to initialize the `helm-rg' minibuffer input with."
   :type 'symbol
+  :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
 
 (defcustom helm-rg-input-min-search-chars 2
@@ -250,6 +257,7 @@ previewed. Creating these overlays can be slow for files with lots of matches in
 this variable is set to an elisp regexp and some file path matches it, `helm-rg' will only highlight
 the current line of the file and the matches in that line when previewing that file."
   :type 'regexp
+  :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
 
 (defcustom helm-rg-prepend-file-name-line-at-top-of-matches t
@@ -1111,11 +1119,13 @@ If PATHS is non-nil, ripgrep will search only those paths, relative to the
 process's cwd. Otherwise, the process's cwd will be searched.
 
 Note that ripgrep respects glob patterns from .gitignore, .rgignore, and .ignore
-files. This composes with the glob defined by `helm-rg-default-glob-string', or
-overridden with `helm-rg--set-glob', which is defined in `helm-rg-map'.
+files, excluding files matching those patterns. This composes with the glob
+defined by `helm-rg-default-glob-string', (which only finds files matching the
+glob), or overridden with `helm-rg--set-glob', which is defined in
+`helm-rg-map'.
 
-The ripgrep command's help output can be printed into its own buffer for reference
-with the interactive command `helm-rg-display-help'.
+The ripgrep command's help output can be printed into its own buffer for
+reference with the interactive command `helm-rg-display-help'.
 
 \\{helm-rg-map}"
   (interactive (list (helm-rg--get-thing-at-pt) current-prefix-arg nil))
