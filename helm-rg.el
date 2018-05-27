@@ -26,6 +26,8 @@
 
 ;; MELPA: https://melpa.org/#/helm-rg
 
+;; !`helm-rg' example usage (./emacs-helm-rg.png)
+
 ;; Search massive codebases extremely fast, using `ripgrep'
 ;; (https://github.com/BurntSushi/ripgrep) and `helm'
 ;; (https://github.com/emacs-helm/helm). Inspired by `helm-ag'
@@ -94,12 +96,31 @@
 
 ;; TODO:
 
-;; - make a keybinding to drop into an edit mode and edit file content inline
-;; in results like `helm-ag' (https://github.com/syohex/emacs-helm-ag)
-;; - allow (elisp)? regex searching of search results, including file names
-;;     - use `helm-swoop' (https://github.com/ShingoFukuyama/helm-swoop)?
-;; - publish `update-commentary.el' and the associated machinery as an npm
-;; package
+;; - [ ] make a keybinding to drop into an "edit mode" and edit file content
+;; inline in results like `helm-ag' (https://github.com/syohex/emacs-helm-ag)
+;;     - [x] needs to dedup results from the same line
+;;         - [x] should also merge the colorations
+;;         - [x] this might be easier without using the `--vimgrep' flag (!!!)
+;;     - [ ] can insert markers on either side of each line to find the text
+;; added or removed
+;;     - [ ] can change the filename by editing the file line
+;;     - [ ] can expand the windows of text beyond single lines at a time
+;;         - and pop into another buffer for a quick view if you want
+;; - [x] color all results in the file in the async action!
+;;     - [ ] don't recolor when switching to a different result in the same
+;; file!
+;;         - (actually just whenever file path matches a defcustom regexp)
+;; - [ ] add testing
+;;   - [ ] should be testing all of our interactive functions
+;;       - in all configurations (for all permutations of `defcustom' values)
+;;   - [ ] also everything that's called by helm
+;;       - does helm have any frameworks to make integration testing easier?
+;; - [ ] publish `update-commentary.el' and the associated machinery
+;;     - as an npm package, MELPA package, pandoc writer, *???*
+;; - [ ] make a keybinding for running `helm-rg' on dired marked files
+;;     - then you could do an `f3' search, bounce to dired, then immediately
+;; `helm-rg' on just the file paths from the `f3' search, *which would be
+;; sick*
 
 
 ;; License:
