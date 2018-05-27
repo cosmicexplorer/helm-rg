@@ -280,7 +280,7 @@ This is purely an interface change, and does not affect anything else."
   :type 'boolean
   :group 'helm-rg)
 
-(defcustom helm-rg-bounce-buffer-left-margin 4
+(defcustom helm-rg--bounce-buffer-left-margin 4
   "???"
   ;; FIXME: this should be nonzero!
   :type 'natnum
@@ -1069,6 +1069,21 @@ Merges stdout and stderr, and trims whitespace from the result."
   ;; t says not to add any groups around the output.
   (rx-to-string str t))
 
+(defun helm-rg--get-propertized-match (correct-line-num matched-number-str)
+  (let ((match-num (string-to-number matched-number-str)))
+    (cl-assert (= correct-line-num match-num)))
+  ;; FIXME: make a keybinding to see the full current line number!
+  (let* ((width-margin-diff
+          (- helm-rg--bounce-buffer-left-margin (length matched-number-str)))
+         (narrowed-num-str
+          (if (negativep width-margin-diff)
+              ;; TODO: document the use of X to denote continuation!
+              (format "%sX" (substring matched-number-str 0 3))
+            (format "%s%s"
+                    (make-string width-margin-diff ? )
+                    matched-number-str))))
+    (propertize " " 'display `((margin left-margin) ,narrowed-num-str))))
+
 (defun helm-rg--process-line-numbered-matches ()
   ;; TODO: insert the file line if it's not there (if
   ;; `helm-rg-prepend-file-name-line-at-top-of-matches' is nil)!
@@ -1085,40 +1100,29 @@ Merges stdout and stderr, and trims whitespace from the result."
         ;; (i.e. check to make sure this line works)
         (when (looking-at (format "^\\(%s\\):" escaped-file))
           (replace-match ""))
+        ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
+        ;; matches)!
         (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
         ;; Get the propertized number text, remove it from the line, and stick it into the margin.
         (let* ((matched-number-str (match-string 1))
-               (matched-number (string-to-number matched-number-str)))
-          (cl-assert (= line-num matched-number))
+               (before-string-propertized-text
+                (helm-rg--get-propertized-match line-num matched-number-str)))
           (replace-match "")
-          (let* ((width-margin-diff
-                  (- helm-rg-bounce-buffer-left-margin (length matched-number-str)))
-                 (narrowed-num-str
-                  (if (negativep width-margin-diff)
-                      ;; TODO: document the use of X to denote continuation!
-                      (format "%sX" (substring matched-number-str 0 3))
-                    (format "%s%s"
-                            (make-string width-margin-diff ? )
-                            matched-number-str)))
-                 (before-string-propertized-text
-                  (propertize " " 'display `((margin left-margin) ,narrowed-num-str))))
-            (overlay-put o 'before-string before-string-propertized-text)))))))
+          (overlay-put o 'before-string before-string-propertized-text))))))
 
 (defun helm-rg--bounce ()
   (interactive)
   (let ((new-buf (get-buffer-create helm-rg--bounce-buffer-name)))
     (with-current-buffer new-buf
       (let ((inhibit-read-only t))
-        (erase-buffer))
-      ;; So we can see all the ripgrep colors.
-      (font-lock-mode 1))
+        (erase-buffer)))
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
+      ;; Advance past the end of the header.
       (goto-char (1+ (helm-rg--freeze-header)))
-      ;; FIXME: keybinding to see full current line number!
-      (setq left-margin-width helm-rg-bounce-buffer-left-margin)
-      (helm-rg--process-line-numbered-matches))
+      (helm-rg--process-line-numbered-matches)
+      (helm-rg--bounce-mode))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
 
@@ -1183,7 +1187,7 @@ Merges stdout and stderr, and trims whitespace from the result."
        (helm-rg--do-helm-rg pat)))))
 
 
-;; Keymap
+;; Keymaps
 (defconst helm-rg-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
@@ -1197,6 +1201,11 @@ Merges stdout and stderr, and trims whitespace from the result."
     (define-key map (kbd "<left>") #'helm-rg--file-backward)
     map)
   "Keymap for `helm-rg'.")
+
+(defconst helm-rg--bounce-mode-map
+  (let ((map (make-sparse-keymap)))
+    map)
+  "Keymap for `helm-rg--bounce-mode'.")
 
 
 ;; Helm sources
@@ -1222,6 +1231,15 @@ Merges stdout and stderr, and trims whitespace from the result."
   "Helm async source to search files in a directory using ripgrep.")
 
 
+;; Major modes
+(define-derived-mode helm-rg--bounce-mode fundamental-mode "BOUNCE"
+  "???"
+  ;; TODO: consider whether other kwargs of this macro would be useful!
+  :group 'helm-rg
+  (font-lock-mode 1)
+  (setq left-margin-width helm-rg--bounce-buffer-left-margin))
+
+
 ;; Meta-programmed defcustom forms
 (helm-rg--defcustom-from-alist helm-rg-default-case-sensitivity
     helm-rg--case-sensitive-argument-alist
@@ -1233,6 +1251,11 @@ This is the default value for `helm-rg--case-sensitivity', which can be modified
 This must be an element of `helm-rg--case-sensitive-argument-alist'.")
 
 (helm-rg--defcustom-from-alist helm-rg-match-color helm-rg--color-format-argument-alist
+  ;; FIXME: this shouldn't really be constrained by an alist, nor should style. We should use
+  ;; `helm-rg--color-format-argument-alist' to find the matches, but we should be able to apply
+  ;; whatever styling we want for them.
+
+  ;; FIXME: We should also be able to set faces for files and line numbers in matches.
   "Color to use for match results from ripgrep.
 
 This must be synchronized between ripgrep and elisp so that `helm-rg' can parse the match locations
