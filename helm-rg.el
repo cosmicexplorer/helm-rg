@@ -280,6 +280,13 @@ This is purely an interface change, and does not affect anything else."
   :type 'boolean
   :group 'helm-rg)
 
+(defcustom helm-rg-bounce-buffer-left-margin 4
+  "???"
+  ;; FIXME: this should be nonzero!
+  :type 'natnum
+  :safe #'helm-rg--always-safe-local
+  :group 'helm-rg)
+
 
 ;; Faces
 (defface helm-rg-preview-line-highlight
@@ -363,6 +370,12 @@ Let-bound to `helm-rg--display-buffer-method' in `helm-rg--async-persistent-acti
 (defconst helm-rg--jump-location-text-property 'helm-rg-jump-to
   "Name of a text property attached to the colorized ripgrep output.
 This text property contains location and match info. See `helm-rg--process-transition' for usage.")
+
+(defconst helm-rg--helm-header-property-name 'helm-header
+  "???")
+
+(defconst helm-rg--bounce-buffer-name "helm-rg-bounce-buf"
+  "???")
 
 
 ;; Variables
@@ -1031,13 +1044,69 @@ Merges stdout and stderr, and trims whitespace from the result."
         (error "line '%s' could not be parsed! state was: '%S'"
                colored-line helm-rg--process-output-parse-state)))))
 
+;; (setq left-margin-width 4)
 ;; (progn
 ;;   (setq a (make-overlay (point) (point)))
-;;   (overlay-put a 'before-string (propertize " " 'display `((margin left-margin) ,"e" <face>))))
+;;   (overlay-put a 'before-string (propertize " " 'display `((margin left-margin) ,"eee"))))
+;; (delete-overlay a)
+
+(defun helm-rg--freeze-header ()
+  (cl-assert (get-text-property (point-min) helm-rg--helm-header-property-name))
+  ;; We want to keep the helm header with the argv for reference, but we don't want it to affect
+  ;; any of the editing, so we make it read-only.
+  (let ((helm-header-end
+         (next-single-property-change (point-min) helm-rg--helm-header-property-name)))
+    ;; This stops insertion before the header (the beginning of the buffer), once we set
+    ;; 'read-only below.
+    (put-text-property (point-min) helm-header-end 'front-sticky '(read-only))
+    ;; This means insertion after the header (the first char of the buffer text) won't take on
+    ;; the header's face.
+    (put-text-property helm-header-end (1+ helm-header-end) 'rear-nonsticky '(face))
+    (put-text-property (point-min) helm-header-end 'read-only t)
+    helm-header-end))
+
+(defun helm-rg--escape-literal-string-for-regexp (str)
+  ;; t says not to add any groups around the output.
+  (rx-to-string str t))
+
+(defun helm-rg--process-line-numbered-matches ()
+  ;; TODO: insert the file line if it's not there (if
+  ;; `helm-rg-prepend-file-name-line-at-top-of-matches' is nil)!
+  (msg-eval (helm-rg--current-jump-location) :pre "beg-file")
+  (forward-line 1)
+  (let ((o (make-overlay (point) (point)))
+        (jump-loc (msg-eval (helm-rg--current-jump-location) :pre "beg-match")))
+    (cl-destructuring-bind (&key file line-num match-results) jump-loc
+      (let ((escaped-file (helm-rg--escape-literal-string-for-regexp file))
+            (escaped-num
+             (-> line-num (number-to-string) (helm-rg--escape-literal-string-for-regexp))))
+        ;; TODO: remove the file from the match line if it's there (if
+        ;; `helm-rg-include-file-on-every-match-line' is non-nil)!
+        ;; (i.e. check to make sure this line works)
+        (when (looking-at (format "^\\(%s\\):" escaped-file))
+          (replace-match ""))
+        (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
+        ;; Get the propertized number text, remove it from the line, and stick it into the margin.
+        (let* ((matched-number-str (match-string 1))
+               (matched-number (string-to-number matched-number-str)))
+          (cl-assert (= line-num matched-number))
+          (replace-match "")
+          (let* ((width-margin-diff
+                  (- helm-rg-bounce-buffer-left-margin (length matched-number-str)))
+                 (narrowed-num-str
+                  (if (negativep width-margin-diff)
+                      ;; TODO: document the use of X to denote continuation!
+                      (format "%sX" (substring matched-number-str 0 3))
+                    (format "%s%s"
+                            (make-string width-margin-diff ? )
+                            matched-number-str)))
+                 (before-string-propertized-text
+                  (propertize " " 'display `((margin left-margin) ,narrowed-num-str))))
+            (overlay-put o 'before-string before-string-propertized-text)))))))
 
 (defun helm-rg--bounce ()
   (interactive)
-  (let ((new-buf (get-buffer-create "helm-rg-bounce-buf")))
+  (let ((new-buf (get-buffer-create helm-rg--bounce-buffer-name)))
     (with-current-buffer new-buf
       (let ((inhibit-read-only t))
         (erase-buffer))
@@ -1046,17 +1115,10 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
-      (cl-assert (get-text-property (point-min) 'helm-header))
-      ;; We want to keep the helm header with the argv for reference, but we don't want it to affect
-      ;; any of the editing, so we make it read-only.
-      (let ((helm-header-end (next-single-property-change (point-min) 'helm-header)))
-        ;; This stops insertion before the header (the beginning of the buffer), once we set
-        ;; 'read-only below.
-        (put-text-property (point-min) helm-header-end 'front-sticky '(read-only))
-        ;; This means insertion after the header (the first char of the buffer text) won't take on
-        ;; the header's face.
-        (put-text-property helm-header-end (1+ helm-header-end) 'rear-nonsticky '(face))
-        (put-text-property (point-min) helm-header-end 'read-only t)))
+      (goto-char (1+ (helm-rg--freeze-header)))
+      ;; FIXME: keybinding to see full current line number!
+      (setq left-margin-width helm-rg-bounce-buffer-left-margin)
+      (helm-rg--process-line-numbered-matches))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
 
