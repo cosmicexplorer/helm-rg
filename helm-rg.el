@@ -174,6 +174,10 @@ unquoted name of a variable containing an alist."
         (satisfies file-directory-p)))
 
 
+;; Public error types
+(define-error 'helm-rg-error "Error invoking `helm-rg'")
+
+
 ;; Customization
 (defgroup helm-rg nil
   "Group for `helm-rg' customizations."
@@ -237,13 +241,30 @@ in `helm-rg'."
   :type 'function
   :group 'helm-rg)
 
-(defcustom helm-rg--only-current-line-match-highlight-files-regexp nil
-  "By default, `helm-rg' will create overlays to highlight all the matches from ripgrep in a file
-when previewing a result. This is done each time a match is selected, even for buffers already
-previewed. Creating these overlays can be slow for files with lots of matches in some search. If this
-variable is set to an elisp regexp and some file path matches it, `helm-rg' will only highlight the
-current line of the file and the matches in that line when previewing that file."
+(defcustom helm-rg-only-current-line-match-highlight-files-regexp nil
+  "Regexp describing file paths to only partially highlight, for performance reasons.
+
+By default, `helm-rg' will create overlays to highlight all the matches from ripgrep in a file when
+previewing a result. This is done each time a match is selected, even for buffers already
+previewed. Creating these overlays can be slow for files with lots of matches in some search. If
+this variable is set to an elisp regexp and some file path matches it, `helm-rg' will only highlight
+the current line of the file and the matches in that line when previewing that file."
   :type 'regexp
+  :group 'helm-rg)
+
+(defcustom helm-rg-prepend-file-name-line-at-top-of-matches t
+  "Whether to put the file path as a separate line in `helm-rg' output above the file's matches.
+
+The file can be visited as if it was a match on the first line of the file (without any matched
+text)."
+  :type 'boolean
+  :group 'helm-rg)
+
+(defcustom helm-rg-include-file-on-every-match-line nil
+  "Whether to include the file path on every line of `helm-rg' output.
+
+This is purely an interface change, and does not affect anything else."
+  :type 'boolean
   :group 'helm-rg)
 
 
@@ -508,40 +529,61 @@ Make a dummy process if the input is empty with a clear message to the user."
   (mapc #'delete-overlay helm-rg--current-overlays)
   (setq helm-rg--current-overlays nil))
 
-(defun helm-rg--on-file-line-p (parsed-output)
-  (cl-destructuring-bind (&key file line-num match-results) parsed-output
-    (null line-num)))
-
 (defun helm-rg--collect-lines-matches-current-file (orig-line-parsed file-abs-path)
   "Collect all matches from ripgrep's highlighted output from from FILE-ABS-PATH."
   ;; If we are on a file's line, stay where we are, otherwise back up to the closest file line above
   ;; the current line (this is the file that "owns" the entry).
-  (let ((orig-file (plist-get orig-line-parsed :file)))
-    ;; If the file path matches `helm-rg--only-current-line-match-highlight-files-regexp', just
+  (cl-destructuring-bind (&key
+                          ((:file orig-file))
+                          ((:line-num orig-line-num))
+                          ((:match-results orig-match-results))) orig-line-parsed
+    ;; If the file path matches `helm-rg-only-current-line-match-highlight-files-regexp', just
     ;; highlight the matches for the current line, if not on a file line.
-    (if (and (stringp helm-rg--only-current-line-match-highlight-files-regexp)
-             (string-match-p helm-rg--only-current-line-match-highlight-files-regexp file-abs-path))
-        (list (list :match-line-num (plist-get orig-line-parsed :line-num)
-                    :line-match-results (plist-get orig-line-parsed :match-results)))
+    (if (and (stringp helm-rg-only-current-line-match-highlight-files-regexp)
+             (string-match-p helm-rg-only-current-line-match-highlight-files-regexp
+                             file-abs-path))
+        (and orig-line-num orig-match-results
+             (list
+              (list :match-line-num orig-line-num
+                    :line-match-results orig-match-results)))
       ;; Otherwise, collect all the results on all matching lines of the file.
-      (with-helm-buffer
-        (save-excursion
-          (if (helm-rg--on-file-line-p orig-line-parsed)
-              (beginning-of-line)
-            ;; Go back to the owning file's line.
-            (re-search-backward (rx (: bol (not digit)))))
-          (cl-loop
-           do (forward-line 1)
-           for cur-line = (helm-rg--current-line-contents)
-           for result = (helm-rg--process-transition orig-file cur-line)
-           for line-content = (plist-get result :line-content)
-           while line-content
-           for parsed-line = (helm-rg--get-jump-location-from-line line-content)
-           for match-results = (plist-get parsed-line :match-results)
-           while match-results
-           do (cl-assert (string= orig-file (plist-get result :file-path)))
-           for line-num = (plist-get parsed-line :line-num)
-           collect (list :match-line-num line-num :line-match-results match-results)))))))
+      (with-helm-window
+        (helm-rg--file-backward t)
+        (let ((all-match-results nil))
+          ;; Process the first line (`helm-rg--iterate-results' will advance
+          ;; past the initial element).
+          (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
+            (when (and line-num match-results)
+              (push (list :match-line-num line-num
+                          :line-match-results match-results)
+                    all-match-results)))
+          (helm-rg--iterate-results
+           'forward
+           :success-fn (lambda (cur-line-parsed)
+                         (cl-destructuring-bind (&key file line-num match-results)
+                             cur-line-parsed
+                           (cl-check-type orig-file string)
+                           (cl-check-type file string)
+                           (if (not (string= orig-file file))
+                               ;; We have reached the results from a different file, so done.
+                               t
+                             (progn
+                               ;; In filename lines, these are nil.
+                               (when (and line-num match-results)
+                                 (push (list :match-line-num line-num
+                                             :line-match-results match-results)
+                                       all-match-results))
+                               ;; We loop forever if there's only one file in
+                               ;; the results unless we return this as success.
+                               (helm-end-of-source-p)))))
+           :failure-fn (lambda (cur-line-parsed)
+                         (helm-rg--different-file-line orig-line-parsed cur-line-parsed)))
+          (helm-rg--iterate-results
+           'backward
+           :success-fn (lambda (cur-line-parsed)
+                         (helm-rg--on-same-entry orig-line-parsed cur-line-parsed))
+           :failure-fn #'ignore)
+          (reverse all-match-results))))))
 
 (defun helm-rg--convert-lines-matches-to-overlays (line-match-results)
   (beginning-of-line)
@@ -555,18 +597,18 @@ Make a dummy process if the input is empty with a clear message to the user."
   (save-excursion
     (goto-char (point-min))
     (cl-loop
-     with cur-line = 0
+     with cur-line = 1
      for line-match-set in cur-file-matches
      append (cl-destructuring-bind (&key match-line-num line-match-results)
                 line-match-set
               (let ((lines-diff (- match-line-num cur-line)))
-                (cl-assert (> lines-diff 0))
+                (cl-assert (>= lines-diff 0))
                 (forward-line lines-diff)
                 (incf cur-line lines-diff)
                 (cl-assert (not (eobp)))
                 (helm-rg--convert-lines-matches-to-overlays line-match-results))))))
 
-(defun helm-rg--async-action (parsed-output)
+(defun helm-rg--async-action (parsed-output &optional highlight-matches)
   "Visit the file at the line and column specified by CAND.
 The match is highlighted in its buffer."
   (let ((default-directory helm-rg--current-dir)
@@ -587,16 +629,18 @@ The match is highlighted in its buffer."
                       (push new-buf helm-rg--cur-persistent-bufs))
                     new-buf)))
              (cur-file-matches
-              (helm-rg--collect-lines-matches-current-file parsed-output file-abs-path)))
+              (and highlight-matches
+                   (helm-rg--collect-lines-matches-current-file parsed-output file-abs-path))))
         (funcall helm-rg--display-buffer-method buffer-to-display)
         (let ((match-olays (helm-rg--make-match-overlays-for-result cur-file-matches)))
           (goto-char (point-min))
           (helm-rg--get-optional-typed natnum line-num
-            (forward-line it))
-          (let ((line-olay
-                 (helm-rg--make-overlay-with-face (line-beginning-position) (line-end-position)
-                                                  'helm-rg-preview-line-highlight)))
-            (setq helm-rg--current-overlays (cons line-olay match-olays))))
+            (forward-line (1- it)))
+          (when highlight-matches
+            (let ((line-olay
+                   (helm-rg--make-overlay-with-face (line-beginning-position) (line-end-position)
+                                                    'helm-rg-preview-line-highlight)))
+              (setq helm-rg--current-overlays (cons line-olay match-olays)))))
         ;; Move to the first match in the line (all lines have >= 1 match because ripgrep only
         ;; outputs matching lines).
         (let ((first-match-beginning (plist-get (car match-results) :beg)))
@@ -610,7 +654,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 `helm-rg--current-overlays', if there was no buffer visiting it already."
   (let ((helm-rg--append-persistent-buffers t)
         (helm-rg--display-buffer-method helm-rg--persistent-action-display-buffer-method))
-    (helm-rg--async-action parsed-output)))
+    (helm-rg--async-action parsed-output t)))
 
 (defun helm-rg--kill-proc-if-live (proc-name)
   "Delete the process named PROC-NAME, if it is alive."
@@ -668,6 +712,10 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
   (when line
     (get-text-property 0 helm-rg--jump-location-text-property line)))
 
+(defun helm-rg--current-jump-location ()
+  (let ((cur-line (helm-rg--current-line-contents)))
+    (helm-rg--get-jump-location-from-line cur-line)))
+
 (defun helm-rg--display-to-real (_)
   "Extract the information from the process filter stored in the current entry's text properties.
 
@@ -706,29 +754,32 @@ TODO: add ert testing for this function!"
 
 (defun helm-rg--advance-forward ()
   (interactive)
-  (if (helm-end-of-source-p)
-      (helm-beginning-of-buffer)
-    (helm-next-line)))
+  (let ((helm-move-to-line-cycle-in-source t))
+    (if (helm-end-of-source-p)
+        (helm-beginning-of-buffer)
+      (helm-next-line))))
 
 (defun helm-rg--advance-backward ()
   (interactive)
-  (if (helm-beginning-of-source-p)
-      (helm-end-of-buffer)
-    (helm-previous-line)))
+  (let ((helm-move-to-line-cycle-in-source t))
+    (if (helm-beginning-of-source-p)
+        (helm-end-of-buffer)
+      (helm-previous-line))))
 
-(defun helm-rg--iterate-results (direction success-fn failure-fn)
-  (with-helm-window
-    (let ((helm-move-to-line-cycle-in-source t)
-          (move-fn
+(define-error 'helm-rg--iteration-error "Iterating over files failed." 'helm-rg-error)
+
+(cl-defun helm-rg--iterate-results (direction &key success-fn failure-fn)
+  (with-helm-buffer
+    (let ((move-fn
            (pcase-exhaustive direction
              (`forward #'helm-rg--advance-forward)
              (`backward #'helm-rg--advance-backward))))
       (call-interactively move-fn)
       (cl-loop
-       for cur-line-parsed = (helm-rg--get-jump-location-from-line (helm-rg--current-line-contents))
+       for cur-line-parsed = (helm-rg--current-jump-location)
        until (funcall success-fn cur-line-parsed)
        if (funcall failure-fn cur-line-parsed)
-       return (message "%s" "failure: could not cycle to next entry")
+       return (signal 'helm-rg--iteration-error "could not cycle to the next entry")
        else do (call-interactively move-fn)))))
 
 (defun helm-rg--current-line-contents ()
@@ -755,28 +806,56 @@ TODO: throw the above into an ert test!"
         (cur-file (plist-get cur-line-parsed :file))
         (orig-line-num (plist-get orig-line-parsed :line-num))
         (cur-line-num (plist-get cur-line-parsed :line-num)))
-    (and (not (helm-rg--nullable-states-different orig-file cur-file :cmp #'string=))
+    (cl-check-type orig-file string)
+    (cl-check-type cur-file string)
+    (and (string= orig-file cur-file)
          (not (helm-rg--nullable-states-different orig-line-num cur-line-num :cmp #'=)))))
+
+(defun helm-rg--different-file-line (orig-line-parsed cur-line-parsed)
+  (let ((orig-file (plist-get orig-line-parsed :file))
+        (cur-file (plist-get cur-line-parsed :file)))
+    (cl-check-type orig-file string)
+    (cl-check-type cur-file string)
+    (not (string= orig-file cur-file))))
 
 (defun helm-rg--move-file (direction)
   "Move through matching lines from ripgrep in the given DIRECTION.
 
 This will loop around the results when advancing past the beginning or end of the results."
-  (let* ((orig-line (helm-rg--current-line-contents))
-         (orig-line-parsed (helm-rg--get-jump-location-from-line orig-line)))
-    (helm-rg--iterate-results
-     direction
-     #'helm-rg--on-file-line-p
-     (lambda (cur-line-parsed)
-       (helm-rg--on-same-entry orig-line-parsed cur-line-parsed)))))
+  (with-helm-buffer
+    (let* ((orig-line-parsed (helm-rg--current-jump-location)))
+      (helm-rg--iterate-results
+       direction
+       :success-fn (lambda (cur-line-parsed)
+                     (helm-rg--different-file-line orig-line-parsed cur-line-parsed))
+       :failure-fn (lambda (cur-line-parsed)
+                     (helm-rg--on-same-entry orig-line-parsed cur-line-parsed))))))
 
 (defun helm-rg--file-forward ()
   (interactive)
-  (helm-rg--move-file 'forward))
+  (condition-case err
+      (helm-rg--move-file 'forward)
+    (helm-rg--iteration-error
+     (with-helm-window (helm-end-of-buffer)))))
 
-(defun helm-rg--file-backward ()
-  (interactive)
-  (helm-rg--move-file 'backward))
+(defun helm-rg--do-file-backward-dwim (stay-if-at-top-of-file)
+  (with-helm-window
+    (let ((orig-line-parsed (helm-rg--current-jump-location)))
+      (helm-rg--advance-backward)
+      (let* ((before-line-parsed (helm-rg--current-jump-location))
+             (at-top-of-file-p (helm-rg--different-file-line orig-line-parsed before-line-parsed)))
+        (unless (and at-top-of-file-p (not stay-if-at-top-of-file))
+          (helm-rg--advance-forward))
+        (helm-rg--move-file 'backward))
+      ;; `helm-rg--move-file' gets us one before the line we actually want when going backwards.
+      (helm-rg--advance-forward))))
+
+(defun helm-rg--file-backward (stay-if-at-top-of-file)
+  (interactive (list nil))
+  (condition-case err
+      (helm-rg--do-file-backward-dwim stay-if-at-top-of-file)
+    (helm-rg--iteration-error
+     (with-helm-window (helm-beginning-of-buffer)))))
 
 (defun helm-rg--process-output (exe &rest args)
   "Get output from a process specified by string arguments.
@@ -854,13 +933,17 @@ Merges stdout and stderr, and trims whitespace from the result."
    ((string= line "") (list :file-path nil))
    ((and cur-file (string-match helm-rg--numbered-text-line-regexp line))
     (let* ((whole-line (match-string 0 line))
+           (line-with-prefix-maybe
+            (if helm-rg-include-file-on-every-match-line
+                (format "%s:%s" cur-file whole-line)
+              whole-line))
            (line-num (string-to-number (match-string 1 line)))
            (content (match-string 2 line))
            (jump-to (list :file cur-file
-                          :line-num (1- line-num)
+                          :line-num line-num
                           :match-results (helm-rg--parse-match-regions-from-match-line content)))
            (output-line
-            (propertize whole-line helm-rg--jump-location-text-property jump-to)))
+            (propertize line-with-prefix-maybe helm-rg--jump-location-text-property jump-to)))
       (list :file-path cur-file
             :line-content output-line)))
    ((string-match helm-rg--output-new-file-line-regexp line)
@@ -869,8 +952,10 @@ Merges stdout and stderr, and trims whitespace from the result."
            (jump-to (list :file file-path))
            (output-line
             (propertize whole-line helm-rg--jump-location-text-property jump-to)))
-      (list :file-path file-path
-            :line-content output-line)))))
+      (append
+       (list :file-path file-path)
+       (and helm-rg-prepend-file-name-line-at-top-of-matches
+            (list :line-content output-line)))))))
 
 (defun helm-rg--maybe-get-line (content)
   (helm-rg--into-temp-buffer content
@@ -956,6 +1041,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defconst helm-rg-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
+    ;; TODO: basically all of these functions need to be tested.
     (define-key map (kbd "M-g") #'helm-rg--set-glob)
     (define-key map (kbd "M-d") #'helm-rg--set-dir)
     (define-key map (kbd "M-c") #'helm-rg--set-case-sensitivity)
@@ -976,6 +1062,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     :keymap 'helm-rg-map
     :history 'helm-rg--input-history
     :help-message "FIXME: useful help message!!!"
+    ;; TODO: basically all of these functions need to be tested.
     :candidates-process #'helm-rg--make-process
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'helm-rg--parse-process-output
