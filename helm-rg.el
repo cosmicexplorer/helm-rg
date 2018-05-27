@@ -642,6 +642,8 @@ The match is highlighted in its buffer."
   (let ((default-directory helm-rg--current-dir)
         (helm-rg--display-buffer-method
          (or helm-rg--display-buffer-method
+             ;; If a prefix arg is given for the async action or persistent action, use the
+             ;; alternate buffer display method (which by default is `pop-to-buffer').
              (if helm-current-prefix-arg helm-rg-display-buffer-alternate-method
                helm-rg-display-buffer-normal-method))))
     ;; We always want to delete the line overlay if it exists, no matter what.
@@ -849,21 +851,23 @@ TODO: throw the above into an ert test!"
     b))
 
 (defun helm-rg--on-same-entry (orig-line-parsed cur-line-parsed)
-  (let ((orig-file (plist-get orig-line-parsed :file))
-        (cur-file (plist-get cur-line-parsed :file))
-        (orig-line-num (plist-get orig-line-parsed :line-num))
-        (cur-line-num (plist-get cur-line-parsed :line-num)))
+  (cl-destructuring-bind (&key ((:file orig-file)) ((:line-num orig-line-num)) ((:match-results _)))
+      orig-line-parsed
     (cl-check-type orig-file string)
-    (cl-check-type cur-file string)
-    (and (string= orig-file cur-file)
-         (not (helm-rg--nullable-states-different orig-line-num cur-line-num :cmp #'=)))))
+    (cl-destructuring-bind (&key ((:file cur-file)) ((:line-num cur-line-num)) ((:match-results _)))
+        cur-line-parsed
+      (cl-check-type cur-file string)
+      (and (string= orig-file cur-file)
+           (not (helm-rg--nullable-states-different orig-line-num cur-line-num :cmp #'=))))))
 
 (defun helm-rg--different-file-line (orig-line-parsed cur-line-parsed)
-  (let ((orig-file (plist-get orig-line-parsed :file))
-        (cur-file (plist-get cur-line-parsed :file)))
+  (cl-destructuring-bind (&key ((:file orig-file)) ((:line-num _)) ((:match-results _)))
+      orig-line-parsed
     (cl-check-type orig-file string)
-    (cl-check-type cur-file string)
-    (not (string= orig-file cur-file))))
+    (cl-destructuring-bind (&key ((:file cur-file)) ((:line-num _)) ((:match-results _)))
+        cur-line-parsed
+      (cl-check-type cur-file string)
+      (not (string= orig-file cur-file)))))
 
 (defun helm-rg--move-file (direction)
   "Move through matching lines from ripgrep in the given DIRECTION.
@@ -944,8 +948,12 @@ Merges stdout and stderr, and trims whitespace from the result."
            (plist-get (helm-rg--lookup-style style) :cmd-line))))
 
 (defun helm-rg--construct-match-text-properties (color style)
-  `(,(plist-get (helm-rg--lookup-style style) :text-property)
-    (foreground-color . ,(plist-get (helm-rg--lookup-color color) :text-property))))
+  (cl-destructuring-bind (&key ((:text-property style-text-property)) ((:cmd-line _)))
+      (helm-rg--lookup-style style)
+    (cl-destructuring-bind (&key ((:text-property color-text-property)) ((:cmd-line _)))
+        (helm-rg--lookup-color color)
+      `(,style-text-property
+        (foreground-color . ,color-text-property)))))
 
 (defun helm-rg--is-match (position object)
   (let ((text-props-for-position (get-text-property position 'font-lock-face object))
@@ -1159,8 +1167,8 @@ process's cwd. Otherwise, the process's cwd will be searched.
 
 Note that ripgrep respects glob patterns from .gitignore, .rgignore, and .ignore
 files, excluding files matching those patterns. This composes with the glob
-defined by `helm-rg-default-glob-string', (which only finds files matching the
-glob), or overridden with `helm-rg--set-glob', which is defined in
+defined by `helm-rg-default-glob-string', which only finds files matching the
+glob, and can be overridden with `helm-rg--set-glob', which is defined in
 `helm-rg-map'.
 
 The ripgrep command's help output can be printed into its own buffer for
