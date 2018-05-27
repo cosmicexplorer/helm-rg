@@ -1031,6 +1031,35 @@ Merges stdout and stderr, and trims whitespace from the result."
         (error "line '%s' could not be parsed! state was: '%S'"
                colored-line helm-rg--process-output-parse-state)))))
 
+;; (progn
+;;   (setq a (make-overlay (point) (point)))
+;;   (overlay-put a 'before-string (propertize " " 'display `((margin left-margin) ,"e" <face>))))
+
+(defun helm-rg--bounce ()
+  (interactive)
+  (let ((new-buf (get-buffer-create "helm-rg-bounce-buf")))
+    (with-current-buffer new-buf
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      ;; So we can see all the ripgrep colors.
+      (font-lock-mode 1))
+    (with-helm-buffer
+      (copy-to-buffer new-buf (point-min) (point-max)))
+    (with-current-buffer new-buf
+      (cl-assert (get-text-property (point-min) 'helm-header))
+      ;; We want to keep the helm header with the argv for reference, but we don't want it to affect
+      ;; any of the editing, so we make it read-only.
+      (let ((helm-header-end (next-single-property-change (point-min) 'helm-header)))
+        ;; This stops insertion before the header (the beginning of the buffer), once we set
+        ;; 'read-only below.
+        (put-text-property (point-min) helm-header-end 'front-sticky '(read-only))
+        ;; This means insertion after the header (the first char of the buffer text) won't take on
+        ;; the header's face.
+        (put-text-property helm-header-end (1+ helm-header-end) 'rear-nonsticky '(face))
+        (put-text-property (point-min) helm-header-end 'read-only t)))
+    (helm-rg--run-after-exit
+     (funcall helm-rg-display-buffer-normal-method new-buf))))
+
 
 ;; Toggles and settings
 (defmacro helm-rg--run-after-exit (&rest body)
@@ -1097,6 +1126,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map helm-map)
     ;; TODO: basically all of these functions need to be tested.
+    (define-key map (kbd "M-b") #'helm-rg--bounce)
     (define-key map (kbd "M-g") #'helm-rg--set-glob)
     (define-key map (kbd "M-d") #'helm-rg--set-dir)
     (define-key map (kbd "M-c") #'helm-rg--set-case-sensitivity)
