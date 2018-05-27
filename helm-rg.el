@@ -265,7 +265,11 @@ the current line of the file and the matches in that line when previewing that f
   "Whether to put the file path as a separate line in `helm-rg' output above the file's matches.
 
 The file can be visited as if it was a match on the first line of the file (without any matched
-text)."
+text).
+
+FIXME: if this is nil and `helm-rg-include-file-on-every-match-line' is t, you get a stream of just
+line numbers and content, without any file names. We should unify these two boolean options somehow
+to get all three allowable states."
   :type 'boolean
   :group 'helm-rg)
 
@@ -1026,7 +1030,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   `(helm-run-after-exit (lambda () ,@body)))
 
 (defun helm-rg--set-glob ()
-  "Set the glob string used to invoke ripgrep and search again."
+  "Set the glob string used to invoke ripgrep, then search again."
   (interactive)
   (let* ((pat helm-pattern)
          (start-dir helm-rg--current-dir))
