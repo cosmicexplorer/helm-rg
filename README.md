@@ -48,8 +48,8 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - [ ] can expand the windows of text beyond single lines at a time
         - and pop into another buffer for a quick view if you want
 - [x] color all results in the file in the async action!
-    - [ ] don't recolor when switching to a different result in the same file!
-        - (actually just whenever file path matches a defcustom regexp)
+    - [x] don't recolor when switching to a different result in the same file!
+    - [x] don't color matches whenever file path matches `helm-rg-only-current-line-match-highlight-files-regexp`
 - [ ] use `ripgrep` file types instead of flattening globbing out into `helm-rg-default-glob-string`
     - user defines file types in a `defcustom`, and can interactively toggle the accepted file types
     - user can also set the default set of file types

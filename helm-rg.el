@@ -107,9 +107,10 @@
 ;;     - [ ] can expand the windows of text beyond single lines at a time
 ;;         - and pop into another buffer for a quick view if you want
 ;; - [x] color all results in the file in the async action!
-;;     - [ ] don't recolor when switching to a different result in the same
+;;     - [x] don't recolor when switching to a different result in the same
 ;; file!
-;;         - (actually just whenever file path matches a defcustom regexp)
+;;     - [x] don't color matches whenever file path matches
+;; `helm-rg-only-current-line-match-highlight-files-regexp'
 ;; - [ ] use `ripgrep' file types instead of flattening globbing out into
 ;; `helm-rg-default-glob-string'
 ;;     - user defines file types in a `defcustom', and can interactively toggle
@@ -367,8 +368,11 @@ This text property contains location and match info. See `helm-rg--process-trans
 (defvar helm-rg--cur-persistent-bufs nil
   "List of buffers opened temporarily during an `helm-rg' session.")
 
-(defvar helm-rg--current-overlays nil
+(defvar helm-rg--matches-in-current-file-overlays nil
   "List of overlays used to highlight matches in `helm-rg'.")
+
+(defvar helm-rg--current-line-overlay nil
+  "Overlay for highlighting the selected matching line in a file in `helm-rg'.")
 
 (defvar helm-rg--current-dir nil
   "Working directory for the current `helm-rg' session.")
@@ -394,6 +398,12 @@ See the documentation for `helm-rg-default-directory'.")
 
 (defvar helm-rg--case-sensitivity nil
   "Key of `helm-rg--case-sensitive-argument-alist' to use in a `helm-rg' session.")
+
+(defvar helm-rg--previously-highlighted-buffer nil
+  "Previous buffer visited in between async actions of a `helm-rg' session.
+
+Used to cache the overlays drawn for matches within a file when visiting matches in the same file
+using `helm-rg--async-persistent-action'.")
 
 
 ;; Buffer-local Variables
@@ -532,10 +542,16 @@ Make a dummy process if the input is empty with a clear message to the user."
     (overlay-put olay 'face face)
     olay))
 
-(defun helm-rg--delete-overlays ()
-  "Delete all cached overlays in `helm-rg--current-overlays', and clear it."
-  (mapc #'delete-overlay helm-rg--current-overlays)
-  (setq helm-rg--current-overlays nil))
+(defun helm-rg--delete-match-overlays ()
+  "Delete all cached overlays in `helm-rg--matches-in-current-file-overlays', and clear it."
+  (mapc #'delete-overlay helm-rg--matches-in-current-file-overlays)
+  (setq helm-rg--matches-in-current-file-overlays nil))
+
+(defun helm-rg--delete-line-overlay ()
+  "Delete the cached overlay `helm-rg--current-line-overlay', if it exists, and clear it."
+  (helm-rg--get-optional-typed overlay helm-rg--current-line-overlay
+    (delete-overlay it))
+  (setq helm-rg--current-line-overlay nil))
 
 (defun helm-rg--collect-lines-matches-current-file (orig-line-parsed file-abs-path)
   "Collect all matches from ripgrep's highlighted output from from FILE-ABS-PATH."
@@ -624,10 +640,10 @@ The match is highlighted in its buffer."
          (or helm-rg--display-buffer-method
              (if helm-current-prefix-arg helm-rg-display-buffer-alternate-method
                helm-rg-display-buffer-normal-method))))
-    (helm-rg--delete-overlays)
+    ;; We always want to delete the line overlay if it exists, no matter what.
+    (helm-rg--delete-line-overlay)
     (cl-destructuring-bind (&key file line-num match-results) parsed-output
-      (let* ((file-abs-path
-              (expand-file-name file))
+      (let* ((file-abs-path (expand-file-name file))
              (buffer-to-display
               (or (when-let ((visiting-buf (find-buffer-visiting file-abs-path)))
                     ;; TODO: prompt to save the buffer if modified? something?
@@ -637,18 +653,35 @@ The match is highlighted in its buffer."
                       (push new-buf helm-rg--cur-persistent-bufs))
                     new-buf)))
              (cur-file-matches
-              (and highlight-matches
-                   (helm-rg--collect-lines-matches-current-file parsed-output file-abs-path))))
+              ;; Clear the old matches and make new ones, if this is a different file than the last
+              ;; one we visited in this session.
+              (if (not highlight-matches)
+                  nil
+                (let ((need-rewrite-match-highlights
+                       (not (eq helm-rg--previously-highlighted-buffer buffer-to-display))))
+                  (setq helm-rg--previously-highlighted-buffer buffer-to-display)
+                  (if need-rewrite-match-highlights
+                      (progn
+                        (helm-rg--delete-match-overlays)
+                        (helm-rg--collect-lines-matches-current-file parsed-output file-abs-path))
+                    nil)))))
+        ;; Display the buffer visiting the file with the matches.
         (funcall helm-rg--display-buffer-method buffer-to-display)
-        (let ((match-olays (helm-rg--make-match-overlays-for-result cur-file-matches)))
-          (goto-char (point-min))
-          (helm-rg--get-optional-typed natnum line-num
-            (forward-line (1- it)))
-          (when highlight-matches
-            (let ((line-olay
-                   (helm-rg--make-overlay-with-face (line-beginning-position) (line-end-position)
-                                                    'helm-rg-preview-line-highlight)))
-              (setq helm-rg--current-overlays (cons line-olay match-olays)))))
+        ;; Make overlays highlighting all the matches (unless we are in the same file as
+        ;; before, or highlight-matches is nil).
+        (when cur-file-matches
+          (setq helm-rg--matches-in-current-file-overlays
+                (helm-rg--make-match-overlays-for-result cur-file-matches)))
+        ;; Advance in the file to the given line.
+        (goto-char (point-min))
+        (helm-rg--get-optional-typed natnum line-num
+          (forward-line (1- it)))
+        ;; Make a line overlay, if requested.
+        (when highlight-matches
+          (let ((line-olay
+                 (helm-rg--make-overlay-with-face (line-beginning-position) (line-end-position)
+                                                  'helm-rg-preview-line-highlight)))
+            (setq helm-rg--current-line-overlay line-olay)))
         ;; Move to the first match in the line (all lines have >= 1 match because ripgrep only
         ;; outputs matching lines).
         (let ((first-match-beginning (plist-get (car match-results) :beg)))
@@ -659,7 +692,7 @@ The match is highlighted in its buffer."
 (defun helm-rg--async-persistent-action (parsed-output)
   "Visit the file at the line and column specified by CAND.
 Call `helm-rg--async-action', but push the buffer corresponding to CAND to
-`helm-rg--current-overlays', if there was no buffer visiting it already."
+`helm-rg--matches-in-current-file-overlays', if there was no buffer visiting it already."
   (let ((helm-rg--append-persistent-buffers t)
         (helm-rg--display-buffer-method helm-rg--persistent-action-display-buffer-method))
     (helm-rg--async-action parsed-output t)))
@@ -680,7 +713,8 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 
 (defun helm-rg--unwind-cleanup ()
   "Reset all the temporary state in `defvar's in this package."
-  (helm-rg--delete-overlays)
+  (helm-rg--delete-match-overlays)
+  (helm-rg--delete-line-overlay)
   (cl-loop
    for opened-buf in helm-rg--cur-persistent-bufs
    unless (eq (current-buffer) opened-buf)
@@ -692,7 +726,8 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
                               helm-rg--error-buffer-name)
   (setq helm-rg--glob-string nil
         helm-rg--paths-to-search nil
-        helm-rg--case-sensitivity nil))
+        helm-rg--case-sensitivity nil
+        helm-rg--previously-highlighted-buffer nil))
 
 (defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
