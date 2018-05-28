@@ -358,6 +358,23 @@ matches a specific color, then searching for that specific color as a text prope
 The value is the ripgrep command-line argument which enforces the specified type of
 case-sensitivity.")
 
+(defconst helm-rg--ripgrep-argv-format-alist
+  `((helm-rg-ripgrep-executable :face helm-rg-base-rg-cmd-face)
+    ((->> helm-rg--case-sensitive-argument-alist
+          (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity))
+     :face helm-rg-active-arg-face)
+    ("--color=ansi" :face helm-rg-cmd-arg-face)
+    ((helm-rg--construct-match-color-format-arguments)
+     :face helm-rg-cmd-arg-face)
+    ((unless (helm-rg--empty-glob-p helm-rg--glob-string)
+       (list "-g" helm-rg--glob-string))
+     :face helm-rg-active-arg-face)
+    (it
+     :face font-lock-string-face)
+    ((helm-rg--process-paths-to-search helm-rg--paths-to-search)
+     :face helm-rg-directory-cmd-face))
+  "Alist mapping (sexp -> face) describing how to generate and propertize the argv for ripgrep.")
+
 (defconst helm-rg--helm-buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
 (defconst helm-rg--process-buffer-name "*helm-rg--rg-output*")
@@ -462,7 +479,7 @@ using `helm-rg--async-persistent-action'.")
 (defvar helm-rg--last-argv nil
   "Argument list for the most recent ripgrep invocation.
 
-Used to hydrate `helm-rg--rg-invocation-argv'.")
+Used for the command-line header in `helm-rg--bounce-mode'.")
 
 
 ;; Buffer-local Variables
@@ -472,9 +489,6 @@ Used to hydrate `helm-rg--rg-invocation-argv'.")
 
 This is buffer-local because it is specific to a single process invocation and is manipulated in
 that process's buffer. See `helm-rg--parse-process-output' for usage.")
-
-(defvar-local helm-rg--rg-invocation-argv nil
-  "Argument list for the ripgrep invocation which produced the results in `helm-rg-bounce-mode'.")
 
 
 ;; Utilities
@@ -562,32 +576,23 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
   (or (null glob-str)
       (string-blank-p glob-str)))
 
-(defun helm-rg--apply-face-to (face strings)
-  (--map (helm-rg--make-face face it) strings))
-
 (defun helm-rg--construct-argv (pattern)
   "Create an argument list for the ripgrep command.
 
 This argument list is propertized for display in the `helm-buffer' header when using `helm-rg', and
 is used directly to invoke ripgrep. It uses `defcustom' values, and `defvar' values bound in other
 functions."
-  `(,(helm-rg--make-face 'helm-rg-base-rg-cmd-face helm-rg-ripgrep-executable)
-    ,@(->>
-       helm-rg--case-sensitive-argument-alist
-       (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity)
-       (helm-rg--apply-face-to 'helm-rg-active-arg-face))
-    ,(helm-rg--make-face 'helm-rg-cmd-arg-face "--color=ansi")
-    ,@(->>
-       (helm-rg--construct-match-color-format-arguments helm-rg-match-color helm-rg-match-style)
-       (helm-rg--apply-face-to 'helm-rg-cmd-arg-face))
-    ,@(->>
-       (unless (helm-rg--empty-glob-p helm-rg--glob-string)
-         (list "-g" helm-rg--glob-string))
-       (helm-rg--apply-face-to 'helm-rg-active-arg-face))
-    ,(helm-rg--make-face 'font-lock-string-face pattern)
-    ,@(->>
-       (helm-rg--process-paths-to-search helm-rg--paths-to-search)
-       (helm-rg--apply-face-to 'helm-rg-directory-cmd-face))))
+  ;; TODO: document these pcase deconstructions in the docstring for
+  ;; `helm-rg--ripgrep-argv-format-alist'!
+  (cl-loop
+   for el in helm-rg--ripgrep-argv-format-alist
+   append (pcase-exhaustive el
+            (`(,(or (and `it (let expr pattern)) expr) :face ,face-sym)
+             (pcase-exhaustive (eval expr)
+               ((and (pred listp) args)
+                (--map (helm-rg--make-face face-sym it) args))
+               (arg
+                (list (helm-rg--make-face face-sym arg))))))))
 
 (defun helm-rg--make-process-from-argv (argv)
   (let* ((real-proc (make-process
@@ -1014,31 +1019,35 @@ Merges stdout and stderr, and trims whitespace from the result."
     (read-only-mode 1)
     (current-buffer)))
 
-(defun helm-rg--lookup-color (color)
-  (helm-rg--alist-get-exhaustive color helm-rg--color-format-argument-alist))
+(defun helm-rg--lookup-default-alist (alist elt)
+  (if elt
+      (helm-rg--alist-get-exhaustive elt alist)
+    (cdar alist)))
 
-(defun helm-rg--lookup-style (style)
-  (helm-rg--alist-get-exhaustive style helm-rg--style-format-argument-alist))
+(defun helm-rg--lookup-color (&optional color)
+  (helm-rg--lookup-default-alist helm-rg--color-format-argument-alist color))
 
-(defun helm-rg--construct-match-color-format-arguments (color style)
+(defun helm-rg--lookup-style (&optional style)
+  (helm-rg--lookup-default-alist helm-rg--style-format-argument-alist style))
+
+(defun helm-rg--construct-match-color-format-arguments ()
   (list
    (format "--colors=match:fg:%s"
-           (plist-get (helm-rg--lookup-color color) :cmd-line))
+           (plist-get (helm-rg--lookup-color) :cmd-line))
    (format "--colors=match:style:%s"
-           (plist-get (helm-rg--lookup-style style) :cmd-line))))
+           (plist-get (helm-rg--lookup-style) :cmd-line))))
 
-(defun helm-rg--construct-match-text-properties (color style)
+(defun helm-rg--construct-match-text-properties ()
   (cl-destructuring-bind (&key ((:text-property style-text-property)) ((:cmd-line _)))
-      (helm-rg--lookup-style style)
+      (helm-rg--lookup-style)
     (cl-destructuring-bind (&key ((:text-property color-text-property)) ((:cmd-line _)))
-        (helm-rg--lookup-color color)
+        (helm-rg--lookup-color)
       `(,style-text-property
         (foreground-color . ,color-text-property)))))
 
 (defun helm-rg--is-match (position object)
   (let ((text-props-for-position (get-text-property position 'font-lock-face object))
-        (text-props-for-match
-         (helm-rg--construct-match-text-properties helm-rg-match-color helm-rg-match-style)))
+        (text-props-for-match (helm-rg--construct-match-text-properties)))
     (equal text-props-for-position text-props-for-match)))
 
 (defun helm-rg--first-match-start-ripgrep-output (position match-line &optional find-end)
@@ -1134,20 +1143,24 @@ Merges stdout and stderr, and trims whitespace from the result."
                      colored-line helm-rg--process-output-parse-state)))))
     string-result))
 
-(defun helm-rg--freeze-header ()
+(defun helm-rg--freeze-header (argv)
   (cl-assert (get-text-property (point-min) helm-rg--helm-header-property-name))
   ;; We want to keep the helm header with the argv for reference, but we don't want it to affect
   ;; any of the editing, so we make it read-only.
   (let ((helm-header-end
-         (next-single-property-change (point-min) helm-rg--helm-header-property-name)))
-    ;; This means insertion after the header (the first char of the buffer text) won't take on
-    ;; the header's face.
-    (put-text-property helm-header-end (1+ helm-header-end) 'rear-nonsticky '(face))
-    ;; This stops insertion before the header as well (the beginning of the buffer).
-    (put-text-property (point-min) helm-header-end 'front-sticky '(read-only))
-    ;; One past the end stops backspacing into the header line.
-    (put-text-property (point-min) (1+ helm-header-end) 'read-only t)
-    helm-header-end))
+         (next-single-property-change (point-min) helm-rg--helm-header-property-name))
+        (inhibit-read-only t))
+    (delete-region (point-min) (1+ helm-header-end))
+    (insert (format "%s\n" (helm-rg--join " " argv)))
+    (let ((new-argv-end (point)))
+      ;; This means insertion after the header (the first char of the buffer text) won't take on
+      ;; the header's face.
+      (put-text-property new-argv-end (1+ new-argv-end) 'rear-nonsticky '(face))
+      ;; This stops insertion before the header as well (the beginning of the buffer).
+      (put-text-property (point-min) new-argv-end 'front-sticky '(read-only))
+      ;; One past the end stops backspacing into the header line.
+      (put-text-property (point-min) (1+ new-argv-end) 'read-only t)
+      new-argv-end)))
 
 (defun helm-rg--escape-literal-string-for-regexp (str)
   ;; t says not to add any groups around the output.
@@ -1203,17 +1216,18 @@ Merges stdout and stderr, and trims whitespace from the result."
           (put-text-property (1- (match-beginning 0)) (match-end 0) 'read-only t))))))
 
 (defun helm-rg--process-line-numbered-matches ()
-  (cl-loop
-   while (not (eobp))
-   ;; Insert the file heading, or advance a line downwards to get to the first match entry.
-   for cur-file = (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
-   do (cl-loop
-       for cur-loc = (helm-rg--current-jump-location)
-       for file-for-entry = (plist-get cur-loc :file)
-       while (string= cur-file file-for-entry)
-       do (progn
-            (helm-rg--format-match-line cur-loc)
-            (forward-line 1)))))
+  (let ((inhibit-read-only t))
+   (cl-loop
+    while (not (eobp))
+    ;; Insert the file heading, or advance a line downwards to get to the first match entry.
+    for cur-file = (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
+    do (cl-loop
+        for cur-loc = (helm-rg--current-jump-location)
+        for file-for-entry = (plist-get cur-loc :file)
+        while (string= cur-file file-for-entry)
+        do (progn
+             (helm-rg--format-match-line cur-loc)
+             (forward-line 1))))))
 
 (defun helm-rg--bounce ()
   (interactive)
@@ -1225,13 +1239,14 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
-      ;; Advance past the end of the header.
-      (goto-char (1+ (helm-rg--freeze-header)))
+      (-> helm-rg--last-argv
+          (helm-rg--freeze-header)
+          ;; Advance past the end of the header.
+          (goto-char))
       (save-excursion
         (helm-rg--process-line-numbered-matches))
       (helm-rg--bounce-mode)
-      (set-buffer-modified-p nil)
-      (setq helm-rg--rg-invocation-argv helm-rg--last-argv))
+      (set-buffer-modified-p nil))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
 
@@ -1323,6 +1338,9 @@ Merges stdout and stderr, and trims whitespace from the result."
   ;; it's not it will error out very quickly (because `helm-make-source' will fail if that symbol
   ;; is removed).
   (helm-make-source "ripgrep" 'helm-grep-ag-class
+    ;; FIXME: we don't want the header to be hydrated by helm, it's huge and blue and
+    ;; unnecessary. Do it ourselves, then we don't have to delete the header in
+    ;; `helm-rg--freeze-header'.
     :header-name #'helm-rg--header-name
     :keymap 'helm-rg-map
     :history 'helm-rg--input-history
@@ -1360,23 +1378,6 @@ This is the default value for `helm-rg--case-sensitivity', which can be modified
 `helm-rg--set-case-sensitivity' during a `helm-rg' session.
 
 This must be an element of `helm-rg--case-sensitive-argument-alist'.")
-
-(helm-rg--defcustom-from-alist helm-rg-match-color helm-rg--color-format-argument-alist
-  ;; FIXME: this shouldn't really be constrained by an alist, nor should style. We should use
-  ;; `helm-rg--color-format-argument-alist' to find the matches, but we should be able to apply
-  ;; whatever styling we want for them.
-
-  ;; FIXME: We should also be able to set faces for files and line numbers in matches.
-  "Color to use for match results from ripgrep.
-
-This must be synchronized between ripgrep and elisp so that `helm-rg' can parse the match locations
-from the ripgrep highlights, so it must be an element of `helm-rg--color-format-argument-alist'.")
-
-(helm-rg--defcustom-from-alist helm-rg-match-style helm-rg--style-format-argument-alist
-  "Style to use for match results from ripgrep.
-
-This must be synchronized between ripgrep and elisp so that `helm-rg' can parse the match locations
-from the ripgrep highlights, so it must be an element of `helm-rg--style-format-argument-alist'.")
 
 
 ;; Autoloaded functions
