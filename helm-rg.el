@@ -1052,51 +1052,41 @@ Merges stdout and stderr, and trims whitespace from the result."
   ;; any of the editing, so we make it read-only.
   (let ((helm-header-end
          (next-single-property-change (point-min) helm-rg--helm-header-property-name)))
-    ;; This stops insertion before the header (the beginning of the buffer), once we set
-    ;; 'read-only below.
-    (put-text-property (point-min) helm-header-end 'front-sticky '(read-only))
     ;; This means insertion after the header (the first char of the buffer text) won't take on
     ;; the header's face.
     (put-text-property helm-header-end (1+ helm-header-end) 'rear-nonsticky '(face))
-    (put-text-property (point-min) helm-header-end 'read-only t)
+    ;; This stops insertion before the header as well (the beginning of the buffer).
+    (put-text-property (point-min) helm-header-end 'front-sticky '(read-only))
+    ;; One past the end stops backspacing into the header line.
+    (put-text-property (point-min) (1+ helm-header-end) 'read-only t)
     helm-header-end))
 
 (defun helm-rg--escape-literal-string-for-regexp (str)
   ;; t says not to add any groups around the output.
   (rx-to-string str t))
 
-(defun helm-rg--get-propertized-match (correct-line-num matched-number-str)
-  (let ((match-num (string-to-number matched-number-str)))
-    (cl-assert (= correct-line-num match-num)))
-  ;; FIXME: make a keybinding to see the full current line number!
-  (let* ((width-margin-diff
-          (- helm-rg--bounce-buffer-left-margin (length matched-number-str)))
-         (narrowed-num-str
-          (if (negativep width-margin-diff)
-              ;; TODO: document the use of X to denote continuation!
-              (format "%sX" (substring matched-number-str 0 3))
-            (format "%s%s"
-                    (make-string width-margin-diff ? )
-                    matched-number-str))))
-    (propertize " " 'display `((margin left-margin) ,narrowed-num-str))))
-
 (defun helm-rg--maybe-insert-file-heading (cur-jump-loc)
   ;; TODO: insert the file line if it's not there (if
   ;; `helm-rg-prepend-file-name-line-at-top-of-matches' is nil)!
   ;; (i.e. check to make sure this function works)
-  (cl-destructuring-bind (&key file line-num match-results)
-      cur-jump-loc
-    (cl-check-type file string)
-    (if (not line-num)
-        ;; We already have an appropriate file heading.
-        (forward-line 1)
-      (cl-assert match-results)
-      ;; We need to insert the file's line.
-      (insert (format "%s\n"
-                      (propertize file helm-rg--jump-location-text-property cur-jump-loc))))
-    file))
+  (let ((pt (point)))
+    (cl-destructuring-bind (&key file line-num match-results)
+        cur-jump-loc
+      (cl-check-type file string)
+      (if (not line-num)
+          ;; We already have an appropriate file heading.
+          (forward-line 1)
+        (cl-assert match-results)
+        ;; We need to insert the file's line.
+        (let ((inhibit-read-only t))
+          (insert (format "%s\n"
+                          (propertize file helm-rg--jump-location-text-property cur-jump-loc)))))
+      ;; Freeze the file name headings as well for now.
+      (put-text-property pt (point) 'front-sticky '(read-only))
+      (put-text-property pt (point) 'read-only t)
+      file)))
 
-(defun helm-rg--make-overlay-for-line-number (jump-loc)
+(defun helm-rg--format-match-line (jump-loc)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
     (let ((escaped-file (helm-rg--escape-literal-string-for-regexp file))
           (escaped-num
@@ -1110,18 +1100,12 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; matches)!
       (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
       ;; Get the propertized number text, remove it from the line, and stick it into the margin.
-      (let* ((olay
-              ;; Make an overlay for the whole line, which includes text inserted before (at the
-              ;; beginning of the line) or after (at the end of the line).
-              (make-overlay
-               (line-beginning-position) (line-end-position)
-               nil nil t))
-             (matched-number-str (match-string 1))
-             (before-string-propertized-text
-              (helm-rg--get-propertized-match line-num matched-number-str)))
-        (replace-match "")
-        (overlay-put olay 'before-string before-string-propertized-text)
-        olay))))
+      (let* ((matched-number-str (match-string 1))
+             (matched-num (string-to-number matched-number-str)))
+        (cl-assert (= matched-num line-num))
+        (put-text-property (match-beginning 0) (match-end 0) 'front-sticky '(read-only))
+        (put-text-property (match-beginning 0) (match-end 0) 'rear-nonsticky '(read-only))
+        (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))))
 
 (defun helm-rg--process-line-numbered-matches ()
   (cl-loop
@@ -1133,7 +1117,7 @@ Merges stdout and stderr, and trims whitespace from the result."
        for file-for-entry = (plist-get cur-loc :file)
        while (string= cur-file file-for-entry)
        do (progn
-            (helm-rg--make-overlay-for-line-number cur-loc)
+            (helm-rg--format-match-line cur-loc)
             (forward-line 1)))))
 
 (defun helm-rg--bounce ()
