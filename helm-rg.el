@@ -550,27 +550,32 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
   (or (null glob-str)
       (string-blank-p glob-str)))
 
+(defun helm-rg--apply-face-to (face strings)
+  (--map (helm-rg--make-face face it) strings))
+
 (defun helm-rg--construct-argv (pattern)
   "Create an argument list for the ripgrep command.
-Uses `defcustom' values, and `defvar' values bound in other functions."
+
+This argument list is propertized for display in the `helm-buffer' header when using `helm-rg', and
+is used directly to invoke ripgrep. It uses `defcustom' values, and `defvar' values bound in other
+functions."
   `(,(helm-rg--make-face 'helm-rg-base-rg-cmd-face helm-rg-ripgrep-executable)
-    ,(->>
-      helm-rg--case-sensitive-argument-alist
-      (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity)
-      (car)
-      (helm-rg--make-face 'helm-rg-active-arg-face))
+    ,@(->>
+       helm-rg--case-sensitive-argument-alist
+       (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity)
+       (helm-rg--apply-face-to 'helm-rg-active-arg-face))
     ,(helm-rg--make-face 'helm-rg-cmd-arg-face "--color=ansi")
     ,@(->>
        (helm-rg--construct-match-color-format-arguments helm-rg-match-color helm-rg-match-style)
-       (--map (helm-rg--make-face 'helm-rg-cmd-arg-face it)))
+       (helm-rg--apply-face-to 'helm-rg-cmd-arg-face))
     ,@(->>
        (unless (helm-rg--empty-glob-p helm-rg--glob-string)
          (list "-g" helm-rg--glob-string))
-       (--map (helm-rg--make-face 'helm-rg-active-arg-face it)))
+       (helm-rg--apply-face-to 'helm-rg-active-arg-face))
     ,(helm-rg--make-face 'font-lock-string-face pattern)
     ,@(->>
        (helm-rg--process-paths-to-search helm-rg--paths-to-search)
-       (--map (helm-rg--make-face 'helm-rg-directory-cmd-face it)))))
+       (helm-rg--apply-face-to 'helm-rg-directory-cmd-face))))
 
 (defun helm-rg--make-process-from-argv (argv)
   (let* ((real-proc (make-process
