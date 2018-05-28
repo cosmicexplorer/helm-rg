@@ -287,11 +287,6 @@ This is purely an interface change, and does not affect anything else."
   "Face for the line of text matched by the ripgrep process."
   :group 'helm-rg)
 
-(defface helm-rg-preview-match-highlight
-  '((t (:background "purple" :foreground "white")))
-  "Face for the text matched by the pattern given to the ripgrep process."
-  :group 'helm-rg)
-
 (defface helm-rg-base-rg-cmd-face
   '((t (:foreground "gray" :weight normal)))
   "Face for the ripgrep executable in the ripgrep invocation."
@@ -318,11 +313,28 @@ This is purely an interface change, and does not affect anything else."
 
 (defface helm-rg-title-face
   '((t (:foreground "purple" :background "black" :weight bold)))
-  "Face for the title of the ripgrep async helm source.")
+  "Face for the title of the ripgrep async helm source."
+  :group 'helm-rg)
 
 (defface helm-rg-directory-header-face
   '((t (:foreground "white" :background "black" :weight bold)))
-  "Face for the current directory in the header of the `helm-buffer' for `helm-rg'.")
+  "Face for the current directory in the header of the `helm-buffer' for `helm-rg'."
+  :group 'helm-rg)
+
+(defface helm-rg-file-match-face
+  '((t (:foreground "#0ff" :underline t)))
+  "Face for the file name when displaying matches in the `helm-buffer' for `helm-rg'."
+  :group 'helm-rg)
+
+(defface helm-rg-line-number-match-face
+  '((t (:foreground "orange")))
+  "Face for line numbers when displaying matches in the `helm-buffer' for `helm-rg'."
+  :group 'helm-rg)
+
+(defface helm-rg-match-text-face
+  '((t (:foreground "white" :background "purple")))
+  "Face for displaying matches in the `helm-buffer' and in file previews for `helm-rg'."
+  :group 'helm-rg)
 
 
 ;; Constants
@@ -346,7 +358,7 @@ matches a specific color, then searching for that specific color as a text prope
 The value is the ripgrep command-line argument which enforces the specified type of
 case-sensitivity.")
 
-(defconst helm-rg--buffer-name "*helm-rg*")
+(defconst helm-rg--helm-buffer-name "*helm-rg*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
 (defconst helm-rg--process-buffer-name "*helm-rg--rg-output*")
 
@@ -683,7 +695,7 @@ Make a dummy process if the input is empty with a clear message to the user."
   (--map (cl-destructuring-bind (&key beg end) it
            (helm-rg--make-overlay-with-face
             (+ (point) beg) (+ (point) end)
-            'helm-rg-preview-match-highlight))
+            'helm-rg-match-text-face))
          line-match-results))
 
 (defun helm-rg--make-match-overlays-for-result (cur-file-matches)
@@ -792,7 +804,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
    do (kill-buffer opened-buf)
    finally (setq helm-rg--cur-persistent-bufs nil))
   (helm-rg--kill-proc-if-live helm-rg--process-name)
-  (helm-rg--kill-bufs-if-live helm-rg--buffer-name
+  (helm-rg--kill-bufs-if-live helm-rg--helm-buffer-name
                               helm-rg--process-buffer-name
                               helm-rg--error-buffer-name)
   (setq helm-rg--glob-string nil
@@ -804,7 +816,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
 (defun helm-rg--do-helm-rg (rg-pattern)
   "Invoke ripgrep to search for RG-PATTERN, using `helm'."
   (helm :sources '(helm-rg-process-source)
-        :buffer helm-rg--buffer-name
+        :buffer helm-rg--helm-buffer-name
         :input rg-pattern
         :prompt "rg pattern: "))
 
@@ -1042,36 +1054,54 @@ Merges stdout and stderr, and trims whitespace from the result."
                  nil)
    finally return line-char-index))
 
-(defun helm-rg--parse-match-regions-from-match-line (match-line)
+(defun helm-rg--parse-propertize-match-regions-from-match-line (match-line)
   (cl-loop
    with line-char-index = 0
+   with cur-match-str = ""
+   with match-regions = nil
    for match-beg = (helm-rg--first-match-start-ripgrep-output line-char-index match-line)
-   while match-beg
+   if (not match-beg)
+   return (list :propertized-line (concat cur-match-str
+                                          (substring match-line match-end))
+                :match-regions match-regions)
+   concat (substring match-line match-end match-beg) into cur-match-str
    for match-end = (helm-rg--first-match-start-ripgrep-output match-beg match-line t)
    do (setq line-char-index match-end)
-   collect (list :beg match-beg :end match-end)))
+   concat (substring match-line match-beg match-end) into cur-match-str
+   collect (list :beg match-beg :end match-end) into match-regions))
 
 (defun helm-rg--process-transition (cur-file line)
+  ;; TODO: document this function!
+  ;; FIXME: some pcase extensions (?) for regex matching could make this method much more clear.
   (cond
    ((string= line "") (list :file-path nil))
    ((and cur-file (string-match helm-rg--numbered-text-line-regexp line))
     (let* ((whole-line (match-string 0 line))
-           (line-with-prefix-maybe
-            (if helm-rg-include-file-on-every-match-line
-                (format "%s:%s" cur-file whole-line)
-              whole-line))
-           (line-num (string-to-number (match-string 1 line)))
+           (line-num-str (match-string 1 line))
            (content (match-string 2 line))
-           (jump-to (list :file cur-file
-                          :line-num line-num
-                          :match-results (helm-rg--parse-match-regions-from-match-line content)))
-           (output-line
-            (propertize line-with-prefix-maybe helm-rg--jump-location-text-property jump-to)))
-      (list :file-path cur-file
-            :line-content output-line)))
+           (propertized-match-results
+            (helm-rg--parse-propertize-match-regions-from-match-line content)))
+      (cl-destructuring-bind (&key propertized-line match-regions) propertized-match-results
+        (let* ((prefixed-line
+                (helm-rg--join
+                 ":"
+                 `(,@(when helm-rg-include-file-on-every-match-line
+                       (list cur-file))
+                   ,(helm-rg--make-face 'helm-rg-line-number-match-face line-num-str)
+                   ,propertized-line)))
+               (line-num (string-to-number line-num-str))
+               (jump-to (list :file cur-file
+                              :line-num line-num
+                              :match-results match-regions))
+               (output-line
+                (propertize prefixed-line helm-rg--jump-location-text-property jump-to)))
+          (list :file-path cur-file
+                :line-content output-line)))))
    ((string-match helm-rg--output-new-file-line-regexp line)
-    (let* ((whole-line (match-string 0 line))
-           (file-path (match-string 1 line))
+    (let* ((whole-line (->> (match-string 0 line)
+                            (helm-rg--make-face 'helm-rg-file-match-face)))
+           (file-path (->> (match-string 1 line)
+                           (helm-rg--make-face 'helm-rg-file-match-face)))
            (jump-to (list :file file-path))
            (output-line
             (propertize whole-line helm-rg--jump-location-text-property jump-to)))
@@ -1089,15 +1119,18 @@ Merges stdout and stderr, and trims whitespace from the result."
             :rest (buffer-string)))))
 
 (defun helm-rg--parse-process-output (input-line)
-  (let ((colored-line (ansi-color-apply input-line)))
-    (cl-destructuring-bind (&key cur-file) helm-rg--process-output-parse-state
-      (if-let ((parsed (helm-rg--process-transition cur-file colored-line)))
-          (cl-destructuring-bind (&key file-path line-content) parsed
-            (setq helm-rg--process-output-parse-state
-                  (list :cur-file file-path))
-            (or line-content ""))
-        (error "line '%s' could not be parsed! state was: '%S'"
-               colored-line helm-rg--process-output-parse-state)))))
+  ;; TODO: document this function!
+  (let* ((colored-line (ansi-color-apply input-line))
+         (string-result
+          (cl-destructuring-bind (&key cur-file) helm-rg--process-output-parse-state
+            (if-let ((parsed (helm-rg--process-transition cur-file colored-line)))
+                (cl-destructuring-bind (&key file-path line-content) parsed
+                  (setq helm-rg--process-output-parse-state (list :cur-file file-path))
+                  ;; Exits here.
+                  (or line-content ""))
+              (error "line '%s' could not be parsed! state was: '%S'"
+                     colored-line helm-rg--process-output-parse-state)))))
+    string-result))
 
 (defun helm-rg--freeze-header ()
   (cl-assert (get-text-property (point-min) helm-rg--helm-header-property-name))
@@ -1195,7 +1228,8 @@ Merges stdout and stderr, and trims whitespace from the result."
       (save-excursion
         (helm-rg--process-line-numbered-matches))
       (helm-rg--bounce-mode)
-      (setq helm-rg--rg-invocation-argv (msg-eval helm-rg--last-argv)))
+      (set-buffer-modified-p nil)
+      (setq helm-rg--rg-invocation-argv helm-rg--last-argv))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
 
@@ -1296,6 +1330,8 @@ Merges stdout and stderr, and trims whitespace from the result."
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'helm-rg--parse-process-output
     :display-to-real #'helm-rg--display-to-real
+    ;; TODO: add a `defcustom' for this.
+    ;; :candidate-number-limit 200
     ;; It doesn't seem there is any obvious way to get the original input if using
     ;; :pattern-transformer.
     :persistent-action #'helm-rg--async-persistent-action
