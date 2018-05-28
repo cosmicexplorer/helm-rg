@@ -326,8 +326,13 @@ This is purely an interface change, and does not affect anything else."
   "Face for the file name when displaying matches in the `helm-buffer' for `helm-rg'."
   :group 'helm-rg)
 
+(defface helm-rg-colon-separator-ripgrep-output-face
+  '((t (:foreground "white")))
+  "Face for the separator between file, line, and match text in ripgrep output."
+  :group 'helm-rg)
+
 (defface helm-rg-line-number-match-face
-  '((t (:foreground "orange")))
+  '((t (:foreground "orange" :underline t)))
   "Face for line numbers when displaying matches in the `helm-buffer' for `helm-rg'."
   :group 'helm-rg)
 
@@ -1095,10 +1100,12 @@ Merges stdout and stderr, and trims whitespace from the result."
       (cl-destructuring-bind (&key propertized-line match-regions) propertized-match-results
         (let* ((prefixed-line
                 (helm-rg--join
-                 ":"
+                 (->> ":"
+                      (helm-rg--make-face 'helm-rg-colon-separator-ripgrep-output-face ))
                  `(,@(when helm-rg-include-file-on-every-match-line
                        (list cur-file))
-                   ,(helm-rg--make-face 'helm-rg-line-number-match-face line-num-str)
+                   ,(->> line-num-str
+                         (helm-rg--make-face 'helm-rg-line-number-match-face ))
                    ,propertized-line)))
                (line-num (string-to-number line-num-str))
                (jump-to (list :file cur-file
@@ -1189,7 +1196,7 @@ Merges stdout and stderr, and trims whitespace from the result."
         (put-text-property (1- pt) (point) 'read-only t))
       file)))
 
-(defun helm-rg--format-match-line (jump-loc)
+(defun helm-rg--format-match-line-for-bounce (jump-loc)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
     (let ((escaped-file (helm-rg--escape-literal-string-for-regexp file))
           (escaped-num
@@ -1215,7 +1222,7 @@ Merges stdout and stderr, and trims whitespace from the result."
           ;; Apply the read-only property.
           (put-text-property (1- (match-beginning 0)) (match-end 0) 'read-only t))))))
 
-(defun helm-rg--process-line-numbered-matches ()
+(defun helm-rg--process-line-numbered-matches-for-bounce ()
   (let ((inhibit-read-only t))
    (cl-loop
     while (not (eobp))
@@ -1226,7 +1233,7 @@ Merges stdout and stderr, and trims whitespace from the result."
         for file-for-entry = (plist-get cur-loc :file)
         while (string= cur-file file-for-entry)
         do (progn
-             (helm-rg--format-match-line cur-loc)
+             (helm-rg--format-match-line-for-bounce cur-loc)
              (forward-line 1))))))
 
 (defun helm-rg--bounce ()
@@ -1244,7 +1251,7 @@ Merges stdout and stderr, and trims whitespace from the result."
           ;; Advance past the end of the header.
           (goto-char))
       (save-excursion
-        (helm-rg--process-line-numbered-matches))
+        (helm-rg--process-line-numbered-matches-for-bounce))
       (helm-rg--bounce-mode)
       (set-buffer-modified-p nil))
     (helm-rg--run-after-exit
