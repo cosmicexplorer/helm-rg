@@ -1106,7 +1106,7 @@ Merges stdout and stderr, and trims whitespace from the result."
         (let* ((prefixed-line
                 (helm-rg--join
                  (->> ":"
-                      (helm-rg--make-face 'helm-rg-colon-separator-ripgrep-output-face ))
+                      (helm-rg--make-face 'helm-rg-colon-separator-ripgrep-output-face))
                  `(,@(when helm-rg-include-file-on-every-match-line
                        (list cur-file))
                    ,(->> line-num-str
@@ -1199,29 +1199,35 @@ Merges stdout and stderr, and trims whitespace from the result."
       (put-text-property (1- pt) (point) 'read-only t)
       file)))
 
-(defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce
-    (scratch-buf line-num cur-line match-results)
+(defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce (scratch-buf cur-line jump-loc)
   ;; NB: modifies the current buffer!!!
-  (let ((line-diff (- line-num cur-line)))
-    (cl-assert (or (and (= cur-line 1)
-                        (= line-num 1))
-                   (> line-diff 0)))
-    (let* ((cur-line-in-file
-            (with-current-buffer scratch-buf
-              (forward-line line-diff)
-              (font-lock-ensure (line-beginning-position) (line-end-position))
-              (buffer-substring (line-beginning-position) (line-end-position))))
-           (match-propertized-line-from-file
-            (cl-loop for match in match-results
-                     do (cl-destructuring-bind (&key beg end) match
-                          (put-text-property
-                           beg end
-                           'face 'helm-rg-match-text-face
-                           cur-line-in-file)))))
-      (cl-assert (looking-at ".+$"))
-      (delete-region (point) (match-end 0))
-      (insert cur-line-in-file)
-      (beginning-of-line))))
+  (cl-destructuring-bind (&key file line-num match-results) jump-loc
+    (let ((line-diff (- line-num cur-line)))
+      (cl-assert (or (and (= cur-line 1)
+                          (= line-num 1))
+                     (> line-diff 0)))
+      (let* ((cur-line-in-file
+              (with-current-buffer scratch-buf
+                (forward-line line-diff)
+                (font-lock-ensure (line-beginning-position) (line-end-position))
+                (buffer-substring (line-beginning-position) (line-end-position)))))
+        ;; Apply face to matches.
+        (cl-loop for match in match-results
+                 do (cl-destructuring-bind (&key beg end) match
+                      (put-text-property
+                       beg end
+                       'face 'helm-rg-match-text-face
+                       cur-line-in-file)))
+        ;; Apply the jump location to the inserted text
+        (put-text-property
+         0 (length cur-line-in-file)
+         helm-rg--jump-location-text-property jump-loc
+         cur-line-in-file)
+        ;; TODO: this assertion could be made easier to read.
+        (cl-assert (looking-at ".+$"))
+        (delete-region (point) (match-end 0))
+        (insert cur-line-in-file)
+        (beginning-of-line)))))
 
 (defun helm-rg--format-match-line-for-bounce (jump-loc scratch-buf cur-line)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
@@ -1240,14 +1246,15 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; Inserting text at the beginning is not allowed, except for the newline before this
       ;; entry.
       (put-text-property (match-beginning 0) (match-end 0) 'front-sticky '(read-only))
-      ;; Inserting text after this entry is allowed.
-      (put-text-property (match-beginning 0) (match-end 0) 'rear-nonsticky '(read-only))
+      ;; Inserting text after this entry is allowed, and we don't want it to take the face of this
+      ;; text.
+      (put-text-property (match-beginning 0) (match-end 0) 'rear-nonsticky '(read-only face))
       ;; Apply the read-only property.
       (put-text-property (1- (match-beginning 0)) (match-end 0) 'read-only t)
       (goto-char (match-end 0)))
     (when scratch-buf
       (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
-       scratch-buf line-num cur-line match-results))
+       scratch-buf cur-line jump-loc))
     line-num))
 
 (defun helm-rg--process-line-numbered-matches-for-bounce (read-from-file-p)
@@ -1278,9 +1285,9 @@ Merges stdout and stderr, and trims whitespace from the result."
   (interactive)
   ;; Make a new buffer instead of assuming you'll only want one session at a time. This will become
   ;; especially useful when live editing is introduced.
-  (let ((new-buf (->> helm-rg--bounce-buffer-name
-                      (format "%s: '<helm-pattern>' @ <directory>")
-                      (generate-new-buffer))))
+  (let ((new-buf (--> helm-rg--bounce-buffer-name
+                      (format "%s: '%s' @ %s" it helm-pattern helm-rg--current-dir)
+                      (generate-new-buffer it))))
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
