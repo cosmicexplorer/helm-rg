@@ -1067,7 +1067,9 @@ Merges stdout and stderr, and trims whitespace from the result."
    concat (substring match-line match-end match-beg) into cur-match-str
    for match-end = (helm-rg--first-match-start-ripgrep-output match-beg match-line t)
    do (setq line-char-index match-end)
-   concat (substring match-line match-beg match-end) into cur-match-str
+   concat (helm-rg--make-face
+           'helm-rg-match-text-face (substring match-line match-beg match-end))
+   into cur-match-str
    collect (list :beg match-beg :end match-end) into match-regions))
 
 (defun helm-rg--process-transition (cur-file line)
