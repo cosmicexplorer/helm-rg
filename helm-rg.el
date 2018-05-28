@@ -1099,31 +1099,43 @@ Merges stdout and stderr, and trims whitespace from the result."
       (cl-assert match-results)
       ;; We need to insert the file's line.
       (insert (format "%s\n"
-                      (propertize file helm-rg--jump-location-text-property cur-jump-loc))))))
+                      (propertize file helm-rg--jump-location-text-property cur-jump-loc))))
+    file))
+
+(defun helm-rg--make-overlay-for-line-number (jump-loc)
+  (cl-destructuring-bind (&key file line-num match-results) jump-loc
+    (let ((escaped-file (helm-rg--escape-literal-string-for-regexp file))
+          (escaped-num
+           (-> line-num (number-to-string) (helm-rg--escape-literal-string-for-regexp))))
+      ;; TODO: remove the file from the match line if it's there (if
+      ;; `helm-rg-include-file-on-every-match-line' is non-nil)!
+      ;; (i.e. just check to make sure this line works)
+      (when (looking-at (format "^\\(%s\\):" escaped-file))
+        (replace-match ""))
+      ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
+      ;; matches)!
+      (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
+      ;; Get the propertized number text, remove it from the line, and stick it into the margin.
+      (let* ((olay (make-overlay (point) (point)))
+             (matched-number-str (match-string 1))
+             (before-string-propertized-text
+              (helm-rg--get-propertized-match line-num matched-number-str)))
+        (replace-match "")
+        (overlay-put olay 'before-string before-string-propertized-text)
+        olay))))
 
 (defun helm-rg--process-line-numbered-matches ()
-  (msg-eval (helm-rg--current-jump-location) :pre "beg-file")
-  (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
-  (let ((jump-loc (msg-eval (helm-rg--current-jump-location) :pre "beg-match" :format "%S => %S")))
-    (cl-destructuring-bind (&key file line-num match-results) jump-loc
-      (let ((escaped-file (helm-rg--escape-literal-string-for-regexp file))
-            (escaped-num
-             (-> line-num (number-to-string) (helm-rg--escape-literal-string-for-regexp))))
-        ;; TODO: remove the file from the match line if it's there (if
-        ;; `helm-rg-include-file-on-every-match-line' is non-nil)!
-        ;; (i.e. just check to make sure this line works)
-        (when (looking-at (format "^\\(%s\\):" escaped-file))
-          (replace-match ""))
-        ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
-        ;; matches)!
-        (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
-        ;; Get the propertized number text, remove it from the line, and stick it into the margin.
-        (let* ((olay (make-overlay (point) (point)))
-               (matched-number-str (match-string 1))
-               (before-string-propertized-text
-                (helm-rg--get-propertized-match line-num matched-number-str)))
-          (replace-match "")
-          (overlay-put olay 'before-string before-string-propertized-text))))))
+  (cl-loop
+   while (not (eobp))
+   ;; Insert the file heading, or advance a line downwards to get to the first match entry.
+   for cur-file = (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
+   do (cl-loop
+       for cur-loc = (helm-rg--current-jump-location)
+       for file-for-entry = (plist-get cur-loc :file)
+       while (string= cur-file file-for-entry)
+       do (progn
+            (helm-rg--make-overlay-for-line-number cur-loc)
+            (forward-line 1)))))
 
 (defun helm-rg--bounce ()
   (interactive)
