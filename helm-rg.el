@@ -1046,12 +1046,6 @@ Merges stdout and stderr, and trims whitespace from the result."
         (error "line '%s' could not be parsed! state was: '%S'"
                colored-line helm-rg--process-output-parse-state)))))
 
-;; (setq left-margin-width 4)
-;; (progn
-;;   (setq a (make-overlay (point) (point)))
-;;   (overlay-put a 'before-string (propertize " " 'display `((margin left-margin) ,"eee"))))
-;; (delete-overlay a)
-
 (defun helm-rg--freeze-header ()
   (cl-assert (get-text-property (point-min) helm-rg--helm-header-property-name))
   ;; We want to keep the helm header with the argv for reference, but we don't want it to affect
@@ -1116,7 +1110,12 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; matches)!
       (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
       ;; Get the propertized number text, remove it from the line, and stick it into the margin.
-      (let* ((olay (make-overlay (point) (point)))
+      (let* ((olay
+              ;; Make an overlay for the whole line, which includes text inserted before (at the
+              ;; beginning of the line) or after (at the end of the line).
+              (make-overlay
+               (line-beginning-position) (line-end-position)
+               nil nil t))
              (matched-number-str (match-string 1))
              (before-string-propertized-text
               (helm-rg--get-propertized-match line-num matched-number-str)))
@@ -1149,8 +1148,9 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-current-buffer new-buf
       ;; Advance past the end of the header.
       (goto-char (1+ (helm-rg--freeze-header)))
-      (helm-rg--process-line-numbered-matches)
-      (helm-rg--bounce-mode))
+      (save-excursion
+        (helm-rg--process-line-numbered-matches)
+        (helm-rg--bounce-mode)))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
 
