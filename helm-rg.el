@@ -938,6 +938,8 @@ Merges stdout and stderr, and trims whitespace from the result."
     (error "path '%S' was not a directory." path)))
 
 (defun helm-rg--make-help-buffer (help-buf-name)
+  ;; FIXME: this could be more useful -- but also, is it going to matter to anyone but the
+  ;; developer?
   (with-current-buffer (get-buffer-create help-buf-name)
     (read-only-mode -1)
     (erase-buffer)
@@ -1084,38 +1086,52 @@ Merges stdout and stderr, and trims whitespace from the result."
                     matched-number-str))))
     (propertize " " 'display `((margin left-margin) ,narrowed-num-str))))
 
-(defun helm-rg--process-line-numbered-matches ()
+(defun helm-rg--maybe-insert-file-heading (cur-jump-loc)
   ;; TODO: insert the file line if it's not there (if
   ;; `helm-rg-prepend-file-name-line-at-top-of-matches' is nil)!
+  ;; (i.e. check to make sure this function works)
+  (cl-destructuring-bind (&key file line-num match-results)
+      cur-jump-loc
+    (cl-check-type file string)
+    (if (not line-num)
+        ;; We already have an appropriate file heading.
+        (forward-line 1)
+      (cl-assert match-results)
+      ;; We need to insert the file's line.
+      (insert (format "%s\n"
+                      (propertize file helm-rg--jump-location-text-property cur-jump-loc))))))
+
+(defun helm-rg--process-line-numbered-matches ()
   (msg-eval (helm-rg--current-jump-location) :pre "beg-file")
-  (forward-line 1)
-  (let ((o (make-overlay (point) (point)))
-        (jump-loc (msg-eval (helm-rg--current-jump-location) :pre "beg-match")))
+  (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
+  (let ((jump-loc (msg-eval (helm-rg--current-jump-location) :pre "beg-match" :format "%S => %S")))
     (cl-destructuring-bind (&key file line-num match-results) jump-loc
       (let ((escaped-file (helm-rg--escape-literal-string-for-regexp file))
             (escaped-num
              (-> line-num (number-to-string) (helm-rg--escape-literal-string-for-regexp))))
         ;; TODO: remove the file from the match line if it's there (if
         ;; `helm-rg-include-file-on-every-match-line' is non-nil)!
-        ;; (i.e. check to make sure this line works)
+        ;; (i.e. just check to make sure this line works)
         (when (looking-at (format "^\\(%s\\):" escaped-file))
           (replace-match ""))
         ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
         ;; matches)!
         (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
         ;; Get the propertized number text, remove it from the line, and stick it into the margin.
-        (let* ((matched-number-str (match-string 1))
+        (let* ((olay (make-overlay (point) (point)))
+               (matched-number-str (match-string 1))
                (before-string-propertized-text
                 (helm-rg--get-propertized-match line-num matched-number-str)))
           (replace-match "")
-          (overlay-put o 'before-string before-string-propertized-text))))))
+          (overlay-put olay 'before-string before-string-propertized-text))))))
 
 (defun helm-rg--bounce ()
   (interactive)
-  (let ((new-buf (get-buffer-create helm-rg--bounce-buffer-name)))
-    (with-current-buffer new-buf
-      (let ((inhibit-read-only t))
-        (erase-buffer)))
+  ;; Make a new buffer instead of assuming you'll only want one session at a time. This will become
+  ;; especially useful when live editing is introduced.
+  (let ((new-buf (->> helm-rg--bounce-buffer-name
+                      (format "%s: '<helm-pattern>' @ <directory>")
+                      (generate-new-buffer))))
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
