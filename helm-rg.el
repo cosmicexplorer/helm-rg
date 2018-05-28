@@ -1240,6 +1240,10 @@ Merges stdout and stderr, and trims whitespace from the result."
   (let ((inhibit-read-only t))
    (cl-loop
     while (not (eobp))
+    ;; FIXME: add `defcustom' to choose to not get colored file content the first time (and just use
+    ;; the match lines directly from the results)! This will almost definitely want to default to on
+    ;; -- can have a keybinding to "sync all panes" or something which will allow users to get
+    ;; colors immediately on demand.
     with scratch-buf = (generate-new-buffer helm-rg--bounce-scratch-buffer-name)
     ;; Insert the file heading, or advance a line downwards to get to the first match entry.
     for cur-file = (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
