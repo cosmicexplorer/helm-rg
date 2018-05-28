@@ -280,13 +280,6 @@ This is purely an interface change, and does not affect anything else."
   :type 'boolean
   :group 'helm-rg)
 
-(defcustom helm-rg--bounce-buffer-left-margin 4
-  "???"
-  ;; FIXME: this should be nonzero!
-  :type 'natnum
-  :safe #'helm-rg--always-safe-local
-  :group 'helm-rg)
-
 
 ;; Faces
 (defface helm-rg-preview-line-highlight
@@ -1081,9 +1074,11 @@ Merges stdout and stderr, and trims whitespace from the result."
         (let ((inhibit-read-only t))
           (insert (format "%s\n"
                           (propertize file helm-rg--jump-location-text-property cur-jump-loc)))))
-      ;; Freeze the file name headings as well for now.
-      (put-text-property pt (point) 'front-sticky '(read-only))
-      (put-text-property pt (point) 'read-only t)
+      (let ((inhibit-read-only t))
+        ;; Freeze the file name headings as well for now.
+        (put-text-property pt (point) 'front-sticky '(read-only))
+        ;; Freeze the character before the file as well so backspacing doesn't happen.
+        (put-text-property (1- pt) (point) 'read-only t))
       file)))
 
 (defun helm-rg--format-match-line (jump-loc)
@@ -1099,13 +1094,18 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
       ;; matches)!
       (cl-assert (looking-at (format "^\\(%s\\):" escaped-num)))
-      ;; Get the propertized number text, remove it from the line, and stick it into the margin.
+      ;; Make the propertized line number text read-only.
       (let* ((matched-number-str (match-string 1))
              (matched-num (string-to-number matched-number-str)))
         (cl-assert (= matched-num line-num))
-        (put-text-property (match-beginning 0) (match-end 0) 'front-sticky '(read-only))
-        (put-text-property (match-beginning 0) (match-end 0) 'rear-nonsticky '(read-only))
-        (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))))
+        (let ((inhibit-read-only t))
+          ;; Inserting text at the beginning is not allowed, except for the newline before this
+          ;; entry.
+          (put-text-property (match-beginning 0) (match-end 0) 'front-sticky '(read-only))
+          ;; Inserting text after this entry is allowed.
+          (put-text-property (match-beginning 0) (match-end 0) 'rear-nonsticky '(read-only))
+          ;; Apply the read-only property.
+          (put-text-property (1- (match-beginning 0)) (match-end 0) 'read-only t))))))
 
 (defun helm-rg--process-line-numbered-matches ()
   (cl-loop
@@ -1248,8 +1248,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   "???"
   ;; TODO: consider whether other kwargs of this macro would be useful!
   :group 'helm-rg
-  (font-lock-mode 1)
-  (setq left-margin-width helm-rg--bounce-buffer-left-margin))
+  (font-lock-mode 1))
 
 
 ;; Meta-programmed defcustom forms
