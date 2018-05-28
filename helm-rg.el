@@ -497,6 +497,9 @@ Used for the command-line header in `helm-rg--bounce-mode'.")
 This is buffer-local because it is specific to a single process invocation and is manipulated in
 that process's buffer. See `helm-rg--parse-process-output' for usage.")
 
+(defvar-local helm-rg--beginning-of-bounce-content-mark nil
+  "Contains a marker pointing to the beginning of the match results in a `helm-rg--bounce' buffer.")
+
 
 ;; Utilities
 (defun helm-rg--alist-get-exhaustive (key alist)
@@ -1145,14 +1148,14 @@ Merges stdout and stderr, and trims whitespace from the result."
           (cl-destructuring-bind (&key cur-file) helm-rg--process-output-parse-state
             (if-let ((parsed (helm-rg--process-transition cur-file colored-line)))
                 (cl-destructuring-bind (&key file-path line-content) parsed
-                  (setq helm-rg--process-output-parse-state (list :cur-file file-path))
+                  (setq-local helm-rg--process-output-parse-state (list :cur-file file-path))
                   ;; Exits here.
                   (or line-content ""))
               (error "line '%s' could not be parsed! state was: '%S'"
                      colored-line helm-rg--process-output-parse-state)))))
     string-result))
 
-(defun helm-rg--freeze-header (argv)
+(defun helm-rg--freeze-header-for-bounce (argv)
   (cl-assert (get-text-property (point-min) helm-rg--helm-header-property-name))
   ;; We want to keep the helm header with the argv for reference, but we don't want it to affect
   ;; any of the editing, so we make it read-only.
@@ -1171,7 +1174,7 @@ Merges stdout and stderr, and trims whitespace from the result."
       (put-text-property (point-min) (1+ new-argv-end) 'read-only t)
       new-argv-end)))
 
-(defun helm-rg--maybe-insert-file-heading (cur-jump-loc)
+(defun helm-rg--maybe-insert-file-heading-for-bounce (cur-jump-loc)
   ;; TODO: insert the file line if it's not there (if
   ;; `helm-rg-prepend-file-name-line-at-top-of-matches' is nil)!
   ;; (i.e. check to make sure this function works)
@@ -1179,18 +1182,46 @@ Merges stdout and stderr, and trims whitespace from the result."
     (cl-destructuring-bind (&key file line-num match-results)
         cur-jump-loc
       (cl-check-type file string)
+      ;; FIXME: add some divider above each file line!!!
       (if (not line-num)
           ;; We already have an appropriate file heading.
           (forward-line 1)
         (cl-assert match-results)
         ;; We need to insert the file's line.
         (insert (format "%s\n"
-                        (propertize file helm-rg--jump-location-text-property cur-jump-loc))))
+                        (propertize file helm-rg--jump-location-text-property
+                                    ;; NB: we cut off the results to only the file, because we are
+                                    ;; making a file header line.
+                                    (list :file file)))))
       ;; Freeze the file name headings as well for now.
       (put-text-property pt (point) 'front-sticky '(read-only))
       ;; Freeze the character before the file as well so backspacing doesn't happen.
       (put-text-property (1- pt) (point) 'read-only t)
       file)))
+
+(defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce
+    (scratch-buf line-num cur-line match-results)
+  ;; NB: modifies the current buffer!!!
+  (let ((line-diff (- line-num cur-line)))
+    (cl-assert (or (and (= cur-line 1)
+                        (= line-num 1))
+                   (> line-diff 0)))
+    (let* ((cur-line-in-file
+            (with-current-buffer scratch-buf
+              (forward-line line-diff)
+              (font-lock-ensure (line-beginning-position) (line-end-position))
+              (buffer-substring (line-beginning-position) (line-end-position))))
+           (match-propertized-line-from-file
+            (cl-loop for match in match-results
+                     do (cl-destructuring-bind (&key beg end) match
+                          (put-text-property
+                           beg end
+                           'face 'helm-rg-match-text-face
+                           cur-line-in-file)))))
+      (cl-assert (looking-at ".+$"))
+      (delete-region (point) (match-end 0))
+      (insert cur-line-in-file)
+      (beginning-of-line))))
 
 (defun helm-rg--format-match-line-for-bounce (jump-loc scratch-buf cur-line)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
@@ -1214,52 +1245,34 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; Apply the read-only property.
       (put-text-property (1- (match-beginning 0)) (match-end 0) 'read-only t)
       (goto-char (match-end 0)))
-    (let ((line-diff (- line-num cur-line)))
-      (cl-assert (or (and (= cur-line 1)
-                          (= line-num 1))
-                     (> line-diff 0)))
-      (let* ((cur-line-in-file
-              (with-current-buffer scratch-buf
-                (forward-line line-diff)
-                (font-lock-ensure (line-beginning-position) (line-end-position))
-                (buffer-substring (line-beginning-position) (line-end-position))))
-             (match-propertized-line-from-file
-              (cl-loop for match in match-results
-                       do (cl-destructuring-bind (&key beg end) match
-                            (put-text-property
-                             beg end
-                             'face 'helm-rg-match-text-face
-                             cur-line-in-file)))))
-        (cl-assert (looking-at ".+$"))
-        (delete-region (point) (match-end 0))
-        (insert cur-line-in-file)
-        (beginning-of-line)))
+    (when scratch-buf
+      (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
+       scratch-buf line-num cur-line match-results))
     line-num))
 
-(defun helm-rg--process-line-numbered-matches-for-bounce ()
+(defun helm-rg--process-line-numbered-matches-for-bounce (read-from-file-p)
   (let ((inhibit-read-only t))
-   (cl-loop
-    while (not (eobp))
-    ;; FIXME: add `defcustom' to choose to not get colored file content the first time (and just use
-    ;; the match lines directly from the results)! This will almost definitely want to default to on
-    ;; -- can have a keybinding to "sync all panes" or something which will allow users to get
-    ;; colors immediately on demand.
-    with scratch-buf = (generate-new-buffer helm-rg--bounce-scratch-buffer-name)
-    ;; Insert the file heading, or advance a line downwards to get to the first match entry.
-    for cur-file = (helm-rg--maybe-insert-file-heading (helm-rg--current-jump-location))
-    do (with-current-buffer scratch-buf
-         (insert-file-contents cur-file t nil nil t)
-         (goto-char (point-min))
-         (normal-mode)
-         (font-lock-mode 1))
-    do (cl-loop
-        with cur-line = 1
-        for cur-loc = (helm-rg--current-jump-location)
-        for file-for-entry = (plist-get cur-loc :file)
-        while (string= cur-file file-for-entry)
-        do (setq cur-line (helm-rg--format-match-line-for-bounce cur-loc scratch-buf cur-line))
-        do (forward-line 1))
-    finally (kill-buffer scratch-buf))))
+    (cl-loop
+     while (not (eobp))
+     with scratch-buf = (when read-from-file-p
+                          (generate-new-buffer helm-rg--bounce-scratch-buffer-name))
+     ;; Insert the file heading, or advance a line downwards to get to the first match entry.
+     for cur-file = (helm-rg--maybe-insert-file-heading-for-bounce (helm-rg--current-jump-location))
+     do (when scratch-buf
+          (with-current-buffer scratch-buf
+            (insert-file-contents cur-file t nil nil t)
+            (goto-char (point-min))
+            (normal-mode)
+            (font-lock-mode 1)))
+     do (cl-loop
+         with cur-line = 1
+         for cur-loc = (helm-rg--current-jump-location)
+         for file-for-entry = (plist-get cur-loc :file)
+         while (string= cur-file file-for-entry)
+         do (setq cur-line (helm-rg--format-match-line-for-bounce cur-loc scratch-buf cur-line))
+         do (forward-line 1))
+     finally (when scratch-buf
+               (kill-buffer scratch-buf)))))
 
 (defun helm-rg--bounce ()
   (interactive)
@@ -1272,15 +1285,24 @@ Merges stdout and stderr, and trims whitespace from the result."
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
       (-> helm-rg--last-argv
-          (helm-rg--freeze-header)
+          (helm-rg--freeze-header-for-bounce)
           ;; Advance past the end of the header.
           (goto-char))
-      (save-excursion
-        (helm-rg--process-line-numbered-matches-for-bounce))
-      (helm-rg--bounce-mode)
-      (set-buffer-modified-p nil))
+      (let ((start-of-content (point)))
+        (save-excursion
+          (helm-rg--process-line-numbered-matches-for-bounce nil))
+        (helm-rg--bounce-mode)
+        (setq-local helm-rg--beginning-of-bounce-content-mark
+                    (-> (make-marker) (set-marker start-of-content)))
+        (set-buffer-modified-p nil)))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
+
+(defun helm-rg--bounce-refresh ()
+  (interactive)
+  (save-excursion
+    (goto-char helm-rg--beginning-of-bounce-content-mark)
+    (helm-rg--process-line-numbered-matches-for-bounce t)))
 
 
 ;; Toggles and settings
@@ -1360,6 +1382,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defconst helm-rg--bounce-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c") #'helm-rg--bounce-refresh)
     map)
   "Keymap for `helm-rg--bounce-mode'.")
 
@@ -1372,7 +1395,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   (helm-make-source "ripgrep" 'helm-grep-ag-class
     ;; FIXME: we don't want the header to be hydrated by helm, it's huge and blue and
     ;; unnecessary. Do it ourselves, then we don't have to delete the header in
-    ;; `helm-rg--freeze-header'.
+    ;; `helm-rg--freeze-header-for-bounce'.
     :header-name #'helm-rg--header-name
     :keymap 'helm-rg-map
     :history 'helm-rg--input-history
