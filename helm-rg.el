@@ -454,7 +454,7 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
 
 
 ;; Logic
-(defun helm-rg--make-dummy-process (input)
+(defun helm-rg--make-dummy-process (input err-msg)
   "Make a process that immediately exits to display just a title."
   (let* ((dummy-proc (make-process
                       :name helm-rg--process-name
@@ -462,11 +462,21 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
                       :command '("echo")
                       :noquery t))
          (helm-src-name
-          (format "no results (input '%s' must be at least %d characters)"
+          (format "%s '%s': %s"
+                  (propertize "no results for input" 'face 'bold-italic)
                   input
-                  helm-rg-input-min-search-chars)))
+                  (propertize err-msg 'face '((foreground-color . "red")
+                                              (background-color . "white"))))))
     (helm-attrset 'name helm-src-name)
     dummy-proc))
+
+(defun helm-rg--validate-or-make-dummy-process (input)
+  (cond
+   ((< (length input) helm-rg-input-min-search-chars)
+    (helm-rg--make-dummy-process
+     input
+     (format "must be at least %d characters" helm-rg-input-min-search-chars)))
+   (t t)))
 
 (defun helm-rg--join (sep seq)
   (mapconcat #'identity seq sep))
@@ -513,16 +523,15 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
 (defun helm-rg--construct-argv (pattern)
   "Create an argument list for the ripgrep command.
 Uses `defcustom' values, and `defvar' values bound in other functions."
-  (cons
-   helm-rg-ripgrep-executable
-   (append
-    (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity helm-rg--case-sensitive-argument-alist)
-    '("--color=ansi")
-    (helm-rg--construct-match-color-format-arguments helm-rg-match-color helm-rg-match-style)
-    (unless (helm-rg--empty-glob-p helm-rg--glob-string)
-      (list "-g" helm-rg--glob-string))
-    (list pattern)
-    (helm-rg--process-paths-to-search helm-rg--paths-to-search))))
+  `(,helm-rg-ripgrep-executable
+    ,@(helm-rg--alist-get-exhaustive
+       helm-rg--case-sensitivity helm-rg--case-sensitive-argument-alist)
+    "--color=ansi"
+    ,@(helm-rg--construct-match-color-format-arguments helm-rg-match-color helm-rg-match-style)
+    ,@(unless (helm-rg--empty-glob-p helm-rg--glob-string)
+        (list "-g" helm-rg--glob-string))
+    ,pattern
+    ,@(helm-rg--process-paths-to-search helm-rg--paths-to-search)))
 
 (defun helm-rg--make-process-from-argv (argv)
   (let* ((real-proc (make-process
@@ -541,10 +550,14 @@ Uses `defcustom' values, and `defvar' values bound in other functions."
 Make a dummy process if the input is empty with a clear message to the user."
   (let* ((default-directory helm-rg--current-dir)
          (input helm-pattern))
-    (if (< (length input) helm-rg-input-min-search-chars)
-        (helm-rg--make-dummy-process input)
-      (helm-rg--make-process-from-argv
-       (helm-rg--construct-argv input)))))
+    (pcase-exhaustive (helm-rg--validate-or-make-dummy-process input)
+      ((and x (pred processp)) x)
+      (t
+       (->
+        input
+        (helm-rg--helm-pattern-to-ripgrep-regexp)
+        (helm-rg--construct-argv)
+        (helm-rg--make-process-from-argv))))))
 
 (defun helm-rg--make-overlay-with-face (beg end face)
   "Generate an overlay in region BEG to END with face FACE."
@@ -782,7 +795,7 @@ line without the text properties scrubbed using helm without doing this."
   (cl-loop while (re-search-forward regexp nil t)
            collect (match-string 1)))
 
-(defun helm-rg--pattern-transformer (pattern)
+(defun helm-rg--helm-pattern-to-ripgrep-regexp (pattern)
   "Transform PATTERN (the `helm-input') into a Perl-compatible regular expression.
 
 TODO: add ert testing for this function!"
@@ -1235,7 +1248,8 @@ Merges stdout and stderr, and trims whitespace from the result."
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'helm-rg--parse-process-output
     :display-to-real #'helm-rg--display-to-real
-    :pattern-transformer #'helm-rg--pattern-transformer
+    ;; It doesn't seem there is any obvious way to get the original input if using
+    ;; :pattern-transformer.
     :persistent-action #'helm-rg--async-persistent-action
     :persistent-help "Visit result buffer and highlight matches"
     :requires-pattern nil
