@@ -96,12 +96,13 @@
 
 ;; TODO:
 
-;; - [ ] make a keybinding to drop into an "edit mode" and edit file content
+;; - [x] make a keybinding to drop into an "edit mode" and edit file content
 ;; inline in results like `helm-ag' (https://github.com/syohex/emacs-helm-ag)
+;;     - *currently called "bounce mode"* in the alpha stage
 ;;     - [x] needs to dedup results from the same line
 ;;         - [x] should also merge the colorations
 ;;         - [x] this might be easier without using the `--vimgrep' flag (!!!)
-;;     - [ ] can insert markers on either side of each line to find the text
+;;     - [x] can insert markers on either side of each line to find the text
 ;; added or removed
 ;;     - [ ] can change the filename by editing the file line
 ;;     - [ ] can expand the windows of text beyond single lines at a time
