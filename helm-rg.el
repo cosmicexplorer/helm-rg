@@ -1248,29 +1248,23 @@ Merges stdout and stderr, and trims whitespace from the result."
                        line-to-propertize)
     line-to-propertize))
 
-(defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce (scratch-buf cur-line jump-loc)
+(defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce (scratch-buf jump-loc)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
-    (re-search-forward (rx-to-string `(: bol ,(number-to-string line-num) ":")))
-    (let ((line-diff (- line-num cur-line)))
-      (cl-assert (or (and (= cur-line 1)
-                          (= line-num 1))
-                     (> line-diff 0)))
-      (let ((cur-line-in-file-to-propertize
-             ;; Get the corresponding line in the file's buffer.
-             (with-current-buffer scratch-buf
-               (forward-line line-diff)
-               (font-lock-ensure (line-beginning-position) (line-end-position))
-               (buffer-substring (line-beginning-position) (line-end-position))))
-            ;; Get the end of the text from this line of output -- it may span multiple lines.
-            (match-end
-             (next-single-property-change (point) helm-rg--jump-location-text-property)))
-        (delete-region (point) match-end)
-        (insert (-> cur-line-in-file-to-propertize
-                    (copy-seq)
-                    (helm-rg--propertize-match-line-from-file-for-bounce jump-loc)))
-        ;; We don't insert a newline -- go to the next line.
-        (forward-char)
-        line-num))))
+    (let ((cur-line-in-file-to-propertize
+           ;; Get the corresponding line in the file's buffer (which has already been advanced to
+           ;; the appropriate line).
+           (with-current-buffer scratch-buf
+             (font-lock-ensure (line-beginning-position) (line-end-position))
+             (buffer-substring (line-beginning-position) (line-end-position))))
+          ;; Get the end of the text from this line of output -- it may span multiple lines.
+          (match-end
+           (next-single-property-change (point) helm-rg--jump-location-text-property)))
+      (delete-region (point) match-end)
+      (insert (-> cur-line-in-file-to-propertize
+                  (copy-seq)
+                  (helm-rg--propertize-match-line-from-file-for-bounce jump-loc)))
+      ;; We don't insert a newline -- go to the next line.
+      (forward-char))))
 
 (cl-defun helm-rg--iterate-match-entries-for-bounce (&key file-visitor match-visitor start-pos)
   (goto-char (or start-pos helm-rg--beginning-of-bounce-content-mark))
@@ -1312,14 +1306,23 @@ Merges stdout and stderr, and trims whitespace from the result."
                        (helm-rg--insert-colorized-file-contents scratch-buf file-header-loc)
                        (forward-line 1))
        :match-visitor (lambda (match-loc)
-                        (setq cur-line
-                              (funcall match-line-visitor scratch-buf cur-line match-loc)))))))
+                        (cl-destructuring-bind (&key file line-num match-results) match-loc
+                          (let ((line-number-prefix-pattern
+                                 (rx-to-string `(: bol ,(number-to-string line-num) ":"))))
+                            (re-search-forward line-number-prefix-pattern))
+                          (let ((line-diff (- line-num cur-line)))
+                            (cl-assert (or (and (= cur-line 1)
+                                                (= line-num 1))
+                                           (> line-diff 0)))
+                            (with-current-buffer scratch-buf
+                              (forward-line line-diff))
+                            (funcall match-line-visitor scratch-buf match-loc)
+                            (setq cur-line line-num))))))))
 
 (defun helm-rg--reread-entries-from-file-for-bounce ()
   (helm-rg--apply-matches-with-file
-   (lambda (scratch-buf cur-line match-loc)
-     (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
-      scratch-buf cur-line match-loc))))
+   (lambda (scratch-buf match-loc)
+     (helm-rg--rewrite-propertized-match-line-from-file-for-bounce scratch-buf match-loc))))
 
 (defun helm-rg--bounce ()
   (interactive)
