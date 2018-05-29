@@ -391,8 +391,6 @@ case-sensitivity.")
 
 (defconst helm-rg--bounce-buffer-name "helm-rg-bounce-buf")
 
-(defconst helm-rg--bounce-scratch-buffer-name "*helm-rg-bounce-scratch-buf*")
-
 (defconst helm-rg--output-new-file-line-regexp
   (rx (: bos (group (+? (not (any 0)))) eos))
   "Regexp for ripgrep output which marks the start of results for a new file.
@@ -1296,19 +1294,22 @@ Merges stdout and stderr, and trims whitespace from the result."
    :match-visitor (lambda (match-loc)
                     (helm-rg--format-match-line-for-bounce match-loc))))
 
+(defun helm-rg--insert-colorized-file-contents (scratch-buf file-header-loc)
+  (cl-destructuring-bind (&key file) file-header-loc
+    (with-current-buffer scratch-buf
+      ;; TODO: ???
+      (insert-file-contents file t nil nil t)
+      (normal-mode)
+      (font-lock-mode 1)
+      (goto-char (point-min)))))
+
 (defun helm-rg--reread-entries-from-file-for-bounce ()
   (helm-rg--with-named-temp-buffer scratch-buf
     (let (cur-line)
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
-                       (cl-destructuring-bind (&key file) file-header-loc
-                         (setq cur-line 1)
-                         (with-current-buffer scratch-buf
-                           ;; TODO: ???
-                           (insert-file-contents file t nil nil t)
-                           (goto-char (point-min))
-                           (normal-mode)
-                           (font-lock-mode 1)))
+                       (setq cur-line 1)
+                       (helm-rg--insert-colorized-file-contents scratch-buf file-header-loc)
                        (forward-line 1))
        :match-visitor (lambda (match-loc)
                         (setq cur-line
