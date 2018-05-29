@@ -427,6 +427,9 @@ Let-bound to `helm-rg--display-buffer-method' in `helm-rg--async-persistent-acti
 (defconst helm-rg--all-whitespace-regexp
   (rx (: bos (zero-or-more space) eos)))
 
+(defconst helm-rg--newline-file-name-regexp-for-bounce
+  (rx (: bos (zero-or-more anything) "\n" (zero-or-more anything) eos)))
+
 (defconst helm-rg--jump-location-text-property 'helm-rg-jump-to
   "Name of a text property attached to the colorized ripgrep output.
 
@@ -1190,26 +1193,28 @@ Merges stdout and stderr, and trims whitespace from the result."
   ;; TODO: insert the file line if it's not there (if
   ;; `helm-rg-prepend-file-name-line-at-top-of-matches' is nil)!
   ;; (i.e. check to make sure this function works)
-  (cl-destructuring-bind (&key file line-num match-results)
-      cur-jump-loc
-    (cl-check-type file string)
-    ;; FIXME: add some divider above each file line!!!
-    (if (not line-num)
-        ;; We already have an appropriate file heading.
-        (forward-line 1)
-      (cl-assert match-results)
-      (let ((inhibit-read-only t)
-            (pt (point)))
+  (let ((inhibit-read-only t)
+        (pt (point)))
+    ;; NB: the file line is NOT readonly!!! It can be used to modify the file names.
+    (cl-destructuring-bind (&key file line-num match-results)
+        cur-jump-loc
+      (cl-check-type file string)
+      ;; FIXME: add some divider above each file line!!!
+      (if (not line-num)
+          ;; We already have an appropriate file heading.
+          (forward-line 1)
+        ;; TODO: is this check necessary?
+        (cl-assert match-results)
         ;; We need to insert the file's line.
-        (insert (format "%s\n"
-                        (propertize file helm-rg--jump-location-text-property
-                                    ;; NB: we cut off the results to only the file, because we are
-                                    ;; making a file header line.
-                                    (list :file file))))
-        ;; Freeze the file name headings as well for now.
-        (put-text-property pt (point) 'front-sticky '(read-only))
-        ;; Freeze the character before the file as well so backspacing doesn't happen.
-        (put-text-property (1- pt) (point) 'read-only t)))))
+        ;; NB: we cut off the results to only the file, because we are
+        ;; making a file header line.
+        ;; TODO: make file header line creation into a factory method
+        (->> (list :file file)
+             (propertize file helm-rg--jump-location-text-property)
+             ;; We include the newline here to be on part with the branch where we already have
+             ;; the file header.
+             (format "%s\n")
+             (insert))))))
 
 (defun helm-rg--format-match-line-for-bounce (jump-loc)
   (let ((inhibit-read-only t))
@@ -1313,14 +1318,21 @@ Merges stdout and stderr, and trims whitespace from the result."
       (font-lock-mode 1)
       (goto-char (point-min)))))
 
-(cl-defun helm-rg--apply-matches-with-file (&key match-line-visitor finalize-file-buffer-fn)
-  (helm-rg--with-named-temp-buffer scratch-buf
-    (let (cur-line)
+(cl-defun helm-rg--apply-matches-with-file
+    (&key file-header-line-visitor match-line-visitor finalize-file-buffer-fn)
+  (let (cur-line)
+    (helm-rg--with-named-temp-buffer scratch-buf
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
                        (setq cur-line 1)
                        (helm-rg--insert-colorized-file-contents scratch-buf file-header-loc)
-                       (forward-line 1))
+                       (let* ((file-header-end (next-single-property-change
+                                                (point) helm-rg--jump-location-text-property))
+                              (file-header-line (buffer-substring
+                                                 (point) file-header-end)))
+                         (when file-header-line-visitor
+                           (funcall file-header-line-visitor file-header-loc file-header-line))
+                         (goto-char (1+ file-header-end))))
        :match-visitor (lambda (match-loc)
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
                           (let ((line-number-prefix-pattern
@@ -1344,14 +1356,33 @@ Merges stdout and stderr, and trims whitespace from the result."
                          (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
                           scratch-buf match-loc))))
 
+(defun helm-rg--validate-and-do-file-name-change-for-bounce (cur-file-name cur-file-line-contents)
+  (cond
+   ((string= cur-file-name cur-file-line-contents)
+    nil)
+   ((string-match-p helm-rg--newline-file-name-regexp-for-bounce cur-file-line-contents)
+    (error "error: filename edits cannot contain newlines: '%s'" cur-file-line-contents))
+   (t
+    ;; TODO: ???
+    (write-file cur-file-line-contents t)
+    ;; Move the original file into the trash.
+    (move-file-to-trash cur-file-name))))
+
 (defun helm-rg--save-entries-to-file-for-bounce ()
-  (helm-rg--apply-matches-with-file
-   :match-line-visitor (lambda (scratch-buf match-loc)
-                         (helm-rg--save-match-line-content-to-file-for-bounce
-                          scratch-buf match-loc))
-   :finalize-file-buffer-fn (lambda (_file-header-loc scratch-buf)
-                              (with-current-buffer scratch-buf
-                                (save-buffer)))))
+  (let (cur-file-name cur-file-line-contents)
+    (helm-rg--apply-matches-with-file
+     :file-header-line-visitor (lambda (file-header-loc file-header-line)
+                                 (cl-destructuring-bind (&key file) file-header-loc
+                                   (setq cur-file-name file
+                                         cur-file-line-contents file-header-line)))
+     :match-line-visitor (lambda (scratch-buf match-loc)
+                           (helm-rg--save-match-line-content-to-file-for-bounce
+                            scratch-buf match-loc))
+     :finalize-file-buffer-fn (lambda (_file-header-loc scratch-buf)
+                                (with-current-buffer scratch-buf
+                                  (save-buffer)
+                                  (helm-rg--validate-and-do-file-name-change-for-bounce
+                                   cur-file-name cur-file-line-contents))))))
 
 (defun helm-rg--bounce ()
   (interactive)
