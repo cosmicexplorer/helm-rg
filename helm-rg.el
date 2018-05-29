@@ -885,7 +885,7 @@ line without the text properties scrubbed using helm without doing this."
 TODO: add ert testing for this function!"
   ;; For example: "a  b c" => "a b.*c|c.*a b".
   (->>
-   ;; Split the pattern into our definition of "components". Suppose PATTERN is "a  b c". Then:
+   ;; Split the pattern into our definition-type of "components". Suppose PATTERN is "a  b c". Then:
    ;; "a  b c" => '("a  b" "c")
    (helm-rg--into-temp-buffer pattern
      (helm-rg--collect-matches helm-rg--loop-input-pattern-regexp))
@@ -1266,20 +1266,35 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; We don't insert a newline -- go to the next line.
       (forward-char))))
 
-(cl-defun helm-rg--iterate-match-entries-for-bounce (&key file-visitor match-visitor start-pos)
-  (goto-char (or start-pos helm-rg--beginning-of-bounce-content-mark))
+(defun helm-rg--save-match-line-content-to-file-for-bounce (scratch-buf jump-loc)
+  ;; We are at the beginning of the match text.
+  (let* ((match-end
+          (next-single-property-change (point) helm-rg--jump-location-text-property))
+         (match-text
+          ;; Insert the text without any of our coloration.
+          (buffer-substring-no-properties (point) match-end)))
+    ;; This buffer has already been moved to the appropriate line.
+    (with-current-buffer scratch-buf
+      (delete-region (line-beginning-position) (line-end-position))
+      (insert match-text))
+    (goto-char (1+ match-end))))
+
+(cl-defun helm-rg--iterate-match-entries-for-bounce (&key file-visitor match-visitor end-of-file-fn)
+  (goto-char helm-rg--beginning-of-bounce-content-mark)
   (cl-loop
    while (not (eobp))
-   for file-entry-loc = (helm-rg--current-jump-location)
-   for cur-file = (plist-get file-entry-loc :file)
+   for file-header-loc = (helm-rg--current-jump-location)
+   for cur-file = (plist-get file-header-loc :file)
    ;; NB: We will (maybe) ensure all file lines cannot have any added newlines (with read-only
    ;; stickiness magic).
-   do (funcall file-visitor file-entry-loc)
+   do (funcall file-visitor file-header-loc)
    do (cl-loop
-       for match-entry-loc = (helm-rg--current-jump-location)
-       for match-file = (plist-get match-entry-loc :file)
+       for match-loc = (helm-rg--current-jump-location)
+       for match-file = (plist-get match-loc :file)
        while (string= cur-file match-file)
-       do (funcall match-visitor match-entry-loc))))
+       do (funcall match-visitor match-loc))
+   if end-of-file-fn
+   do (funcall end-of-file-fn file-header-loc)))
 
 (defun helm-rg--process-line-numbered-matches-for-bounce ()
   (helm-rg--iterate-match-entries-for-bounce
@@ -1297,7 +1312,7 @@ Merges stdout and stderr, and trims whitespace from the result."
       (font-lock-mode 1)
       (goto-char (point-min)))))
 
-(defun helm-rg--apply-matches-with-file (match-line-visitor)
+(cl-defun helm-rg--apply-matches-with-file (&key match-line-visitor finalize-file-buffer-fn)
   (helm-rg--with-named-temp-buffer scratch-buf
     (let (cur-line)
       (helm-rg--iterate-match-entries-for-bounce
@@ -1317,12 +1332,25 @@ Merges stdout and stderr, and trims whitespace from the result."
                             (with-current-buffer scratch-buf
                               (forward-line line-diff))
                             (funcall match-line-visitor scratch-buf match-loc)
-                            (setq cur-line line-num))))))))
+                            (setq cur-line line-num))))
+       :end-of-file-fn (when finalize-file-buffer-fn
+                         (lambda (file-header-loc)
+                           (funcall finalize-file-buffer-fn file-header-loc scratch-buf)))))))
 
 (defun helm-rg--reread-entries-from-file-for-bounce ()
   (helm-rg--apply-matches-with-file
-   (lambda (scratch-buf match-loc)
-     (helm-rg--rewrite-propertized-match-line-from-file-for-bounce scratch-buf match-loc))))
+   :match-line-visitor (lambda (scratch-buf match-loc)
+                         (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
+                          scratch-buf match-loc))))
+
+(defun helm-rg--save-entries-to-file-for-bounce ()
+  (helm-rg--apply-matches-with-file
+   :match-line-visitor (lambda (scratch-buf match-loc)
+                         (helm-rg--save-match-line-content-to-file-for-bounce
+                          scratch-buf match-loc))
+   :finalize-file-buffer-fn (lambda (_file-header-loc scratch-buf)
+                              (with-current-buffer scratch-buf
+                                (save-buffer)))))
 
 (defun helm-rg--bounce ()
   (interactive)
@@ -1347,8 +1375,22 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defun helm-rg--bounce-refresh ()
   (interactive)
-  (save-excursion
-    (helm-rg--reread-entries-from-file-for-bounce)))
+  ;; TODO: add prompt here to check to save
+  (if (and (buffer-modified-p) (not (y-or-n-p "changes found. lose changes and overwrite anyway?")))
+      (message "%s" "no changes were made.")
+    (message "%s" "reading file contents...")
+    (save-excursion
+      (helm-rg--reread-entries-from-file-for-bounce))
+    (set-buffer-modified-p nil)))
+
+(defun helm-rg--bounce-dump ()
+  (interactive)
+  (if (not (buffer-modified-p))
+      (message "%s" "no changes to save!")
+    (message "%s" "saving file contents...")
+    (save-excursion
+      (helm-rg--save-entries-to-file-for-bounce))
+    (set-buffer-modified-p nil)))
 
 
 ;; Toggles and settings
@@ -1429,6 +1471,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defconst helm-rg--bounce-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-c") #'helm-rg--bounce-refresh)
+    (define-key map (kbd "C-c C-e") #'helm-rg--bounce-dump)
     map)
   "Keymap for `helm-rg--bounce-mode'.")
 
