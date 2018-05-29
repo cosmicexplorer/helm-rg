@@ -1303,7 +1303,7 @@ Merges stdout and stderr, and trims whitespace from the result."
       (font-lock-mode 1)
       (goto-char (point-min)))))
 
-(defun helm-rg--reread-entries-from-file-for-bounce ()
+(defun helm-rg--apply-matches-with-file (match-line-visitor)
   (helm-rg--with-named-temp-buffer scratch-buf
     (let (cur-line)
       (helm-rg--iterate-match-entries-for-bounce
@@ -1313,8 +1313,13 @@ Merges stdout and stderr, and trims whitespace from the result."
                        (forward-line 1))
        :match-visitor (lambda (match-loc)
                         (setq cur-line
-                              (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
-                               scratch-buf cur-line match-loc)))))))
+                              (funcall match-line-visitor scratch-buf cur-line match-loc)))))))
+
+(defun helm-rg--reread-entries-from-file-for-bounce ()
+  (helm-rg--apply-matches-with-file
+   (lambda (scratch-buf cur-line match-loc)
+     (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
+      scratch-buf cur-line match-loc))))
 
 (defun helm-rg--bounce ()
   (interactive)
