@@ -528,6 +528,18 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
      (goto-char (point-min))
      ,@body))
 
+(defmacro helm-rg--with-named-temp-buffer (name &rest body)
+  "Execute BODY after binding the result of a `with-temp-buffer' to NAME.
+
+BODY is executed in the original buffer, not the new temp buffer."
+  (declare (indent 1))
+  (let ((cur-buf (gensym "helm-rg--with-named-temp-buffer")))
+    `(let ((,cur-buf (current-buffer)))
+       (with-temp-buffer
+         (let ((,name (current-buffer)))
+           (with-current-buffer ,cur-buf
+             ,@body))))))
+
 
 ;; Logic
 (defun helm-rg--make-dummy-process (input err-msg)
@@ -1173,8 +1185,7 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; This stops insertion before the header as well (the beginning of the buffer).
       (put-text-property (point-min) new-argv-end 'front-sticky '(read-only))
       ;; One past the end stops backspacing into the header line.
-      (put-text-property (point-min) (1+ new-argv-end) 'read-only t)
-      new-argv-end)))
+      (put-text-property (point-min) (1+ new-argv-end) 'read-only t))))
 
 (defun helm-rg--maybe-insert-file-heading-for-bounce (cur-jump-loc)
   ;; TODO: insert the file line if it's not there (if
@@ -1278,32 +1289,31 @@ Merges stdout and stderr, and trims whitespace from the result."
        while (string= cur-file match-file)
        do (funcall match-visitor match-entry-loc))))
 
-(defun helm-rg--reread-entries-from-file-for-bounce ()
-  (let ((scratch-buf (generate-new-buffer helm-rg--bounce-scratch-buffer-name))
-        (cur-line 1))
-    (helm-rg--iterate-match-entries-for-bounce
-     :file-visitor (lambda (file-header-loc)
-                     (cl-destructuring-bind (&key file) file-header-loc
-                       (setq cur-line 1)
-                       (with-current-buffer scratch-buf
-                         ;; TODO: ???
-                         (insert-file-contents file t nil nil t)
-                         (goto-char (point-min))
-                         (normal-mode)
-                         (font-lock-mode 1)))
-                     (forward-line 1))
-     :match-visitor (lambda (match-loc)
-                      (setq cur-line
-                            (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
-                             scratch-buf cur-line match-loc))))
-    (kill-buffer scratch-buf)))
-
 (defun helm-rg--process-line-numbered-matches-for-bounce ()
   (helm-rg--iterate-match-entries-for-bounce
    :file-visitor (lambda (file-header-loc)
                    (helm-rg--maybe-insert-file-heading-for-bounce file-header-loc))
    :match-visitor (lambda (match-loc)
                     (helm-rg--format-match-line-for-bounce match-loc))))
+
+(defun helm-rg--reread-entries-from-file-for-bounce ()
+  (helm-rg--with-named-temp-buffer scratch-buf
+    (let (cur-line)
+      (helm-rg--iterate-match-entries-for-bounce
+       :file-visitor (lambda (file-header-loc)
+                       (cl-destructuring-bind (&key file) file-header-loc
+                         (setq cur-line 1)
+                         (with-current-buffer scratch-buf
+                           ;; TODO: ???
+                           (insert-file-contents file t nil nil t)
+                           (goto-char (point-min))
+                           (normal-mode)
+                           (font-lock-mode 1)))
+                       (forward-line 1))
+       :match-visitor (lambda (match-loc)
+                        (setq cur-line
+                              (helm-rg--rewrite-propertized-match-line-from-file-for-bounce
+                               scratch-buf cur-line match-loc)))))))
 
 (defun helm-rg--bounce ()
   (interactive)
@@ -1316,10 +1326,8 @@ Merges stdout and stderr, and trims whitespace from the result."
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
       (helm-rg--bounce-mode)
-      (-> helm-rg--last-argv
-          (helm-rg--freeze-header-for-bounce)
-          ;; Advance past the end of the header.
-          (goto-char))
+      ;; Fix up, then advance past the end of the header.
+      (helm-rg--freeze-header-for-bounce helm-rg--last-argv)
       (setq-local helm-rg--beginning-of-bounce-content-mark
                   (-> (make-marker) (set-marker (point))))
       (save-excursion
@@ -1411,7 +1419,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defconst helm-rg--bounce-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c") #'helm-rg--bounce-refresh)
+    (define-key map (kbd "C-c C-c") #'helm-rg--bounce-refresh)
     map)
   "Keymap for `helm-rg--bounce-mode'.")
 
