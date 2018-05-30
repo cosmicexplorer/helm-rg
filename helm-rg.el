@@ -114,7 +114,7 @@
 ;;     - [x] don't recolor when switching to a different result in the same
 ;; file!
 ;;     - [x] don't color matches whenever file path matches
-;; `helm-rg-only-current-line-match-highlight-files-regexp'
+;; `helm-rg-shallow-highlight-files-regexp'
 ;; - [ ] use `ripgrep' file types instead of flattening globbing out into
 ;; `helm-rg-default-glob-string'
 ;;     - user defines file types in a `defcustom', and can interactively toggle
@@ -253,7 +253,7 @@ in `helm-rg'."
   :type 'function
   :group 'helm-rg)
 
-(defcustom helm-rg-only-current-line-match-highlight-files-regexp nil
+(defcustom helm-rg-shallow-highlight-files-regexp nil
   "Regexp describing file paths to only partially highlight, for performance reasons.
 
 By default, `helm-rg' will create overlays to highlight all the matches from ripgrep in a file when
@@ -671,10 +671,10 @@ Make a dummy process if the input is empty with a clear message to the user."
                           ((:file orig-file))
                           ((:line-num orig-line-num))
                           ((:match-results orig-match-results))) orig-line-parsed
-    ;; If the file path matches `helm-rg-only-current-line-match-highlight-files-regexp', just
+    ;; If the file path matches `helm-rg-shallow-highlight-files-regexp', just
     ;; highlight the matches for the current line, if not on a file line.
-    (if (and (stringp helm-rg-only-current-line-match-highlight-files-regexp)
-             (string-match-p helm-rg-only-current-line-match-highlight-files-regexp
+    (if (and (stringp helm-rg-shallow-highlight-files-regexp)
+             (string-match-p helm-rg-shallow-highlight-files-regexp
                              file-abs-path))
         (and orig-line-num orig-match-results
              (list
@@ -1262,7 +1262,9 @@ Merges stdout and stderr, and trims whitespace from the result."
            (with-current-buffer scratch-buf
              (font-lock-ensure (line-beginning-position) (line-end-position))
              (buffer-substring (line-beginning-position) (line-end-position)))))
-      (delete-region (point) match-end)
+      ;; If match-end is nil, the line is empty.
+      (when match-end
+        (delete-region (point) match-end))
       (insert (-> cur-line-in-file-to-propertize
                   (copy-seq)
                   (helm-rg--propertize-match-line-from-file-for-bounce jump-loc)))
@@ -1274,7 +1276,10 @@ Merges stdout and stderr, and trims whitespace from the result."
   ;; We are at the beginning of the match text.
   (let* ((match-text
           ;; Insert the text without any of our coloration.
-          (buffer-substring-no-properties (point) match-end)))
+          (if match-end
+              (buffer-substring-no-properties (point) match-end)
+            ;; If match-end is nil, the line in the bounce buffer is empty.
+            "")))
     ;; This buffer has already been moved to the appropriate line.
     (with-current-buffer scratch-buf
       (delete-region (line-beginning-position) (line-end-position))
@@ -1317,8 +1322,11 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-current-buffer scratch-buf
       ;; TODO: ???
       (insert-file-contents file t nil nil t)
-      (normal-mode)
-      (font-lock-mode 1)
+      ;; Don't apply e.g. syntax highlighting if e.g. this file is very large.
+      (unless (and helm-rg-shallow-highlight-files-regexp
+                   (string-match-p helm-rg-shallow-highlight-files-regexp file))
+        (normal-mode)
+        (font-lock-mode 1))
       (goto-char (point-min)))))
 
 (cl-defun helm-rg--apply-matches-with-file
@@ -1355,7 +1363,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                               (forward-line line-diff))
                             (let ((match-end
                                    ;; Get the end of the text from this line of output -- it may
-                                   ;; span multiple lines.
+                                   ;; span multiple lines. This is nil if the line is empty.
                                    (next-single-property-change
                                     (point) helm-rg--jump-location-text-property)))
                               (funcall match-line-visitor scratch-buf match-loc match-end))
