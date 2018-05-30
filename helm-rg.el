@@ -1540,8 +1540,8 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defconst helm-rg--bounce-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'helm-rg--bounce-refresh)
-    (define-key map (kbd "C-c C-e") #'helm-rg--bounce-dump)
+    (define-key map (kbd "C-x C-r") #'helm-rg--bounce-refresh)
+    (define-key map (kbd "C-x C-s") #'helm-rg--bounce-dump)
     map)
   "Keymap for `helm-rg--bounce-mode'.")
 
