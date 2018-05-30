@@ -1407,27 +1407,31 @@ Merges stdout and stderr, and trims whitespace from the result."
                                       (with-current-buffer scratch-buf
                                         (save-buffer))
                                     (with-current-buffer scratch-buf
-                                      (let ((prev-buf-name (buffer-name)))
+                                      (let ((prev-scratch-buf-name (buffer-name)))
                                         ;; TODO: ???
                                         (write-file maybe-new-file-name t)
                                         (erase-buffer)
                                         (set-visited-file-name nil t)
-                                        (rename-buffer prev-buf-name)))
+                                        (rename-buffer prev-scratch-buf-name)))
                                     ;; if any buffer visiting, switch to the new file!
                                     (cl-loop for buf in (helm-file-buffers orig-file)
                                              do (with-current-buffer buf
                                                   (set-visited-file-name maybe-new-file-name t t)
-                                                  (revert-buffer nil t t)))
+                                                  ;; Confirm reverting the buffer.
+                                                  (revert-buffer nil nil t)))
                                     ;; Move the original file into the trash.
                                     (move-file-to-trash orig-file)))))))
+
+(defun helm-rg--make-buffer-for-bounce ()
+  (--> helm-rg--bounce-buffer-name
+       (format "%s: '%s' @ %s" it helm-pattern helm-rg--current-dir)
+       (generate-new-buffer it)))
 
 (defun helm-rg--bounce ()
   (interactive)
   ;; Make a new buffer instead of assuming you'll only want one session at a time. This will become
   ;; especially useful when live editing is introduced.
-  (let ((new-buf (--> helm-rg--bounce-buffer-name
-                      (format "%s: '%s' @ %s" it helm-pattern helm-rg--current-dir)
-                      (generate-new-buffer it))))
+  (let ((new-buf (helm-rg--make-buffer-for-bounce)))
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
