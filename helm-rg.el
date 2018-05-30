@@ -1405,10 +1405,12 @@ Merges stdout and stderr, and trims whitespace from the result."
                                       (with-current-buffer scratch-buf
                                         (save-buffer))
                                     (with-current-buffer scratch-buf
-                                      ;; TODO: ???
-                                      (write-file maybe-new-file-name t)
-                                      (erase-buffer)
-                                      (set-visited-file-name nil t))
+                                      (let ((prev-buf-name (buffer-name)))
+                                        ;; TODO: ???
+                                        (write-file maybe-new-file-name t)
+                                        (erase-buffer)
+                                        (set-visited-file-name nil t)
+                                        (rename-buffer prev-buf-name)))
                                     ;; if any buffer visiting, switch to the new file!
                                     (cl-loop for buf in (helm-file-buffers orig-file)
                                              do (with-current-buffer buf
