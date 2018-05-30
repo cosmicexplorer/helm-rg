@@ -430,9 +430,6 @@ Let-bound to `helm-rg--display-buffer-method' in `helm-rg--async-persistent-acti
 (defconst helm-rg--all-whitespace-regexp
   (rx (: bos (zero-or-more space) eos)))
 
-(defconst helm-rg--newline-file-name-regexp-for-bounce
-  (rx (: bos (zero-or-more anything) "\n" (zero-or-more anything) eos)))
-
 (defconst helm-rg--jump-location-text-property 'helm-rg-jump-to
   "Name of a text property attached to the colorized ripgrep output.
 
@@ -1332,13 +1329,19 @@ Merges stdout and stderr, and trims whitespace from the result."
        :file-visitor (lambda (file-header-loc)
                        (setq cur-line 1)
                        (helm-rg--insert-colorized-file-contents scratch-buf file-header-loc)
-                       (let* ((file-header-end (next-single-property-change
-                                                (point) helm-rg--jump-location-text-property))
-                              (file-header-line (buffer-substring
-                                                 (point) file-header-end)))
+                       (let ((file-header-end (next-single-property-change
+                                               (point) helm-rg--jump-location-text-property)))
+                         (save-excursion
+                           ;; NB: we accept filenames with newlines -- we just remove them.
+                           (let ((inhibit-read-only t))
+                             (while (re-search-forward "\n+" (1- file-header-end) t)
+                               (replace-match "")))))
+                       ;; Get the end of the match again (in case we replaced any newlines).
+                       (let ((new-file-header-end (next-single-property-change
+                                                   (point) helm-rg--jump-location-text-property)))
                          (when file-header-line-visitor
-                           (funcall file-header-line-visitor file-header-loc file-header-end))
-                         (goto-char (1+ file-header-end))))
+                           (funcall file-header-line-visitor file-header-loc new-file-header-end))
+                         (goto-char (1+ new-file-header-end))))
        :match-visitor (lambda (match-loc)
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
                           (let ((line-number-prefix-pattern
@@ -1368,24 +1371,16 @@ Merges stdout and stderr, and trims whitespace from the result."
                           scratch-buf match-loc match-end))))
 
 (defun helm-rg--validate-file-name-change-for-bounce (orig-file-name file-header-end)
-  (let* ((new-file-name-maybe
-          (buffer-substring-no-properties (point) file-header-end))
+  (let* ((new-file-name-maybe (buffer-substring-no-properties (point) file-header-end))
          (resulting-file-name
-          (cond
-           ((string= orig-file-name new-file-name-maybe)
-            orig-file-name)
-           ((string-match-p helm-rg--newline-file-name-regexp-for-bounce new-file-name-maybe)
-            ;; TODO: MAKE THIS INTO A PROMPT!!!
-            ;; FIXME: this needs to be more ergonomic -- we don't want the user to lose all of their
-            ;; work!
-            (error "error: filename edits cannot contain newlines: '%s'" new-file-name-maybe))
-           (t
-            new-file-name-maybe))))
+          (if (string= orig-file-name new-file-name-maybe)
+              orig-file-name
+            new-file-name-maybe))
+         (inhibit-read-only t))
     ;; Rewrite the :file text property with the new file name.
-    (let ((inhibit-read-only t))
-      (put-text-property
-       (point) file-header-end
-       helm-rg--jump-location-text-property (list :file resulting-file-name)))
+    (put-text-property
+     (point) file-header-end
+     helm-rg--jump-location-text-property (list :file resulting-file-name))
     resulting-file-name))
 
 (defun helm-rg--save-entries-to-file-for-bounce ()
