@@ -925,7 +925,9 @@ TODO: add ert testing for this function!"
         (helm-end-of-buffer)
       (helm-previous-line))))
 
-(define-error 'helm-rg--iteration-error "Iterating over files failed." 'helm-rg-error)
+(define-error 'helm-rg--helm-buffer-iteration-error
+  "Iterating over ripgrep match results in the helm buffer failed."
+  'helm-rg-error)
 
 (cl-defun helm-rg--iterate-results (direction &key success-fn failure-fn)
   (with-helm-buffer
@@ -938,7 +940,7 @@ TODO: add ert testing for this function!"
        for cur-line-parsed = (helm-rg--current-jump-location)
        until (funcall success-fn cur-line-parsed)
        if (funcall failure-fn cur-line-parsed)
-       return (signal 'helm-rg--iteration-error "could not cycle to the next entry")
+       return (signal 'helm-rg--helm-buffer-iteration-error "could not cycle to the next entry")
        else do (call-interactively move-fn)))))
 
 (defun helm-rg--current-line-contents ()
@@ -996,7 +998,7 @@ This will loop around the results when advancing past the beginning or end of th
   (interactive)
   (condition-case err
       (helm-rg--move-file 'forward)
-    (helm-rg--iteration-error
+    (helm-rg--helm-buffer-iteration-error
      (with-helm-window (helm-end-of-buffer)))))
 
 (defun helm-rg--do-file-backward-dwim (stay-if-at-top-of-file)
@@ -1015,7 +1017,7 @@ This will loop around the results when advancing past the beginning or end of th
   (interactive (list nil))
   (condition-case err
       (helm-rg--do-file-backward-dwim stay-if-at-top-of-file)
-    (helm-rg--iteration-error
+    (helm-rg--helm-buffer-iteration-error
      (with-helm-window (helm-beginning-of-buffer)))))
 
 (defun helm-rg--process-output (exe &rest args)
@@ -1282,6 +1284,8 @@ Merges stdout and stderr, and trims whitespace from the result."
     (forward-char)
     line-num))
 
+;; (defun helm-rg--scan-multiline-match-content-for-bounce ())
+
 (defun helm-rg--save-match-line-content-to-file-for-bounce
     (scratch-buf jump-loc match-end maybe-new-file-name)
   ;; We are at the beginning of the match text.
@@ -1297,8 +1301,8 @@ Merges stdout and stderr, and trims whitespace from the result."
       (insert match-text))
     (cl-destructuring-bind (&key file ((:line-num orig-line-num)) match-results) jump-loc
       (let ((inhibit-read-only t))
-        ;; Put new "fake" match output line data into each line, including a numeric prefix (the first
-        ;; line is already done).
+        ;; Put new "fake" match output line data into each line, including a numeric prefix (the
+        ;; first line is already done).
         (cl-loop
          with match-end-mark = (let ((mark (make-marker)))
                                    (set-marker-insertion-type mark t)
@@ -1363,12 +1367,23 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defun helm-rg--make-line-number-prefix-regexp-for-bounce (line-num)
   (rx-to-string `(: bol ,(number-to-string line-num) ":")))
 
+(define-error 'helm-rg--bounce-mode-iteration-error
+  "Iterating over files in bounce mode failed."
+  'helm-rg-error)
+
 (cl-defun helm-rg--apply-matches-with-file-for-bounce
-    (&key file-header-line-visitor match-line-visitor finalize-file-buffer-fn)
-  (let (cur-line)
+    (&key file-header-line-visitor match-line-visitor finalize-file-buffer-fn filter-by-file)
+  (let (cur-line is-matching-file-p did-find-matching-file-p)
     (helm-rg--with-named-temp-buffer scratch-buf
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
+                       (cl-destructuring-bind (&key file) file-header-loc
+                         (setq is-matching-file-p
+                               (if filter-by-file
+                                   (string= file filter-by-file)
+                                 t))
+                         (setq did-find-matching-file-p (or did-find-matching-file-p
+                                                            is-matching-file-p)))
                        (setq cur-line 1)
                        (helm-rg--insert-colorized-file-contents-for-bounce
                         scratch-buf file-header-loc)
@@ -1383,9 +1398,10 @@ Merges stdout and stderr, and trims whitespace from the result."
                            (let ((inhibit-read-only t))
                              (while (re-search-forward "\n" file-header-end-marker t)
                                (replace-match ""))))
-                         (when file-header-line-visitor
-                           (funcall file-header-line-visitor
-                                    file-header-loc file-header-end-marker))
+                         (if (and file-header-line-visitor is-matching-file-p)
+                             (funcall file-header-line-visitor
+                                      file-header-loc file-header-end-marker)
+                           (goto-char (1+ file-header-end-marker)))
                          (set-marker file-header-end-marker nil)))
        :match-visitor (lambda (match-loc)
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
@@ -1398,19 +1414,25 @@ Merges stdout and stderr, and trims whitespace from the result."
                                            (> line-diff 0)))
                             (with-current-buffer scratch-buf
                               (forward-line line-diff))
-                            (let* ((match-end
-                                    ;; Get the end of the text from this line of output -- it may
-                                    ;; span multiple lines. This is nil if the line is empty.
-                                    (next-single-property-change
-                                     (point) helm-rg--jump-location-text-property))
-                                   (new-line-num
-                                    (funcall match-line-visitor scratch-buf match-loc match-end)))
+                            (let ((match-end
+                                   ;; Get the end of the text from this line of output -- it may
+                                   ;; span multiple lines. This is nil if the line is empty.
+                                   (next-single-property-change
+                                    (point) helm-rg--jump-location-text-property)))
                               ;; Update the line number in the scratch buffer to the one from this
                               ;; match line.
-                              (setq cur-line new-line-num)))))
+                              (if is-matching-file-p
+                                  (setq cur-line (funcall match-line-visitor
+                                                          scratch-buf match-loc match-end))
+                                (goto-char (1+ match-end))
+                                (setq cur-line line-num))))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
-                           (funcall finalize-file-buffer-fn file-header-loc scratch-buf)))))))
+                           (when is-matching-file-p
+                             (funcall finalize-file-buffer-fn file-header-loc scratch-buf))))))
+    (unless did-find-matching-file-p
+      (signal 'helm-rg--bounce-mode-iteration-error
+              (format "could not find requested file: '%s'" filter-by-file)))))
 
 (defun helm-rg--reread-entries-from-file-for-bounce ()
   (helm-rg--apply-matches-with-file-for-bounce
@@ -1437,8 +1459,12 @@ Merges stdout and stderr, and trims whitespace from the result."
     (list :resulting-file-name resulting-file-name
           :end-pt file-header-end)))
 
-(defun helm-rg--save-entries-to-file-for-bounce ()
-  (let (maybe-new-file-name)
+(defun helm-rg--save-entries-to-file-for-bounce (just-this-file-p)
+  (let ((filter-to-file-name (when just-this-file-p
+                               (cl-destructuring-bind (&key file line-num match-results)
+                                   (helm-rg--current-jump-location)
+                                 file)))
+        maybe-new-file-name)
     (helm-rg--apply-matches-with-file-for-bounce
      :file-header-line-visitor (lambda (file-header-loc file-header-end)
                                  (cl-destructuring-bind (&key ((:file orig-file))) file-header-loc
@@ -1469,7 +1495,8 @@ Merges stdout and stderr, and trims whitespace from the result."
                                                   ;; Confirm reverting the buffer.
                                                   (revert-buffer nil nil t)))
                                     ;; Move the original file into the trash.
-                                    (move-file-to-trash orig-file)))))))
+                                    (move-file-to-trash orig-file))))
+     :filter-by-file filter-to-file-name)))
 
 (defun helm-rg--make-buffer-for-bounce ()
   (--> helm-rg--bounce-buffer-name
@@ -1511,8 +1538,10 @@ Merges stdout and stderr, and trims whitespace from the result."
       (message "%s" "no changes to save!")
     (message "%s" "saving file contents...")
     (save-excursion
-      (helm-rg--save-entries-to-file-for-bounce))
+      (helm-rg--save-entries-to-file-for-bounce nil))
     (set-buffer-modified-p nil)))
+
+;; (defun helm-rg--expand-match-context ())
 
 
 ;; Toggles and settings
