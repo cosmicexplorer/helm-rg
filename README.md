@@ -46,7 +46,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
         - [x] this might be easier without using the `--vimgrep` flag (!!!)
     - [x] can insert markers on either side of each line to find the text added or removed
     - [x] can change the filename by editing the file line
-        - [x] **needs** to reset all the file data for each entry if the file name is being changed!!!
+        - [x] needs to reset all the file data for each entry if the file name is being changed!!!
     - [ ] can expand the windows of text beyond single lines at a time
         - and pop into another buffer for a quick view if you want
 - [x] color all results in the file in the async action!
