@@ -232,6 +232,7 @@ Used in `helm-rg--interpret-starting-dir'. Possible values:
   "Ripgrep will not be invoked unless the input is at least this many chars.
 
 See `helm-rg--make-process' and `helm-rg--make-dummy-process' if interested."
+  ;; FIXME: this should be a *positive* integer!
   :type 'integer
   :safe #'helm-rg--always-safe-local
   :group 'helm-rg)
@@ -281,6 +282,12 @@ to get all three allowable states."
 
 This is purely an interface change, and does not affect anything else."
   :type 'boolean
+  :group 'helm-rg)
+
+(defcustom helm-rg--default-expand-match-lines-for-bounce 3
+  "???"
+  ;; FIXME: this should be a *positive* integer!
+  :type 'integer
   :group 'helm-rg)
 
 
@@ -892,7 +899,7 @@ line without the text properties scrubbed using helm without doing this."
 TODO: add ert testing for this function!"
   ;; For example: "a  b c" => "a b.*c|c.*a b".
   (->>
-   ;; Split the pattern into our definition-type of "components". Suppose PATTERN is "a  b c". Then:
+   ;; Split the pattern into our definition of "components". Suppose PATTERN is "a  b c". Then:
    ;; "a  b c" => '("a  b" "c")
    (helm-rg--into-temp-buffer pattern
      (helm-rg--collect-matches helm-rg--loop-input-pattern-regexp))
@@ -1372,8 +1379,12 @@ Merges stdout and stderr, and trims whitespace from the result."
   'helm-rg-error)
 
 (cl-defun helm-rg--apply-matches-with-file-for-bounce
-    (&key file-header-line-visitor match-line-visitor finalize-file-buffer-fn filter-by-file)
-  (let (cur-line is-matching-file-p did-find-matching-file-p)
+    (&key file-header-line-visitor match-line-visitor finalize-file-buffer-fn
+          filter-by-file filter-by-match)
+  (cl-check-type match-line-visitor function)
+  (let ((did-find-matching-entry-p nil)
+        is-matching-file-p
+        cur-line)
     (helm-rg--with-named-temp-buffer scratch-buf
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
@@ -1381,9 +1392,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                          (setq is-matching-file-p
                                (if filter-by-file
                                    (string= file filter-by-file)
-                                 t))
-                         (setq did-find-matching-file-p (or did-find-matching-file-p
-                                                            is-matching-file-p)))
+                                 t)))
                        (setq cur-line 1)
                        (helm-rg--insert-colorized-file-contents-for-bounce
                         scratch-buf file-header-loc)
@@ -1421,18 +1430,24 @@ Merges stdout and stderr, and trims whitespace from the result."
                                     (point) helm-rg--jump-location-text-property)))
                               ;; Update the line number in the scratch buffer to the one from this
                               ;; match line.
-                              (if is-matching-file-p
-                                  (setq cur-line (funcall match-line-visitor
-                                                          scratch-buf match-loc match-end))
+                              (if (and is-matching-file-p
+                                       (if filter-by-match
+                                           (funcall filter-by-match match-loc)
+                                         t))
+                                  (progn
+                                    (setq did-find-matching-entry-p t)
+                                    (setq cur-line (funcall match-line-visitor
+                                                            scratch-buf match-loc match-end)))
                                 (goto-char (1+ match-end))
                                 (setq cur-line line-num))))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
                            (when is-matching-file-p
                              (funcall finalize-file-buffer-fn file-header-loc scratch-buf))))))
-    (unless did-find-matching-file-p
+    (unless did-find-matching-entry-p
       (signal 'helm-rg--bounce-mode-iteration-error
-              (format "could not find requested file: '%s'" filter-by-file)))))
+              (format "no entries matched the filter methods: %S, %S"
+                      filter-by-file filter-by-match)))))
 
 (defun helm-rg--reread-entries-from-file-for-bounce ()
   (helm-rg--apply-matches-with-file-for-bounce
@@ -1524,7 +1539,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defun helm-rg--bounce-refresh ()
   (interactive)
-  ;; TODO: add prompt here to check to save
+  ;; TODO: fix prompts
   (if (and (buffer-modified-p) (not (y-or-n-p "changes found. lose changes and overwrite anyway?")))
       (message "%s" "no changes were made.")
     (message "%s" "reading file contents...")
@@ -1541,7 +1556,13 @@ Merges stdout and stderr, and trims whitespace from the result."
       (helm-rg--save-entries-to-file-for-bounce nil))
     (set-buffer-modified-p nil)))
 
-;; (defun helm-rg--expand-match-context ())
+(defun helm-rg--spread-match-context (signed-amount)
+  (interactive "p"))
+
+(defun helm-rg--expand-match-context (unsigned-amount)
+  (interactive (list (if (numberp current-prefix-arg) (abs current-prefix-arg)
+                       helm-rg--default-expand-match-lines-for-bounce)))
+  (message "%d" unsigned-amount))
 
 
 ;; Toggles and settings
