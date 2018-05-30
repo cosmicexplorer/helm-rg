@@ -1277,9 +1277,10 @@ Merges stdout and stderr, and trims whitespace from the result."
         (delete-region (point) match-end))
       (insert (-> cur-line-in-file-to-propertize
                   (copy-seq)
-                  (helm-rg--propertize-match-line-from-file-for-bounce jump-loc)))
-      ;; We don't insert a newline -- go to the next line.
-      (forward-char))))
+                  (helm-rg--propertize-match-line-from-file-for-bounce jump-loc))))
+    ;; We don't insert a newline -- go to the next line.
+    (forward-char)
+    line-num))
 
 (defun helm-rg--save-match-line-content-to-file-for-bounce
     (scratch-buf jump-loc match-end maybe-new-file-name)
@@ -1294,7 +1295,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-current-buffer scratch-buf
       (delete-region (line-beginning-position) (line-end-position))
       (insert match-text))
-    (cl-destructuring-bind (&key file line-num match-results) jump-loc
+    (cl-destructuring-bind (&key file ((:line-num orig-line-num)) match-results) jump-loc
       (let ((inhibit-read-only t))
         ;; Put new "fake" match output line data into each line, including a numeric prefix (the first
         ;; line is already done).
@@ -1303,11 +1304,15 @@ Merges stdout and stderr, and trims whitespace from the result."
                                    (set-marker-insertion-type mark t)
                                    (set-marker mark match-end)
                                    mark)
-         for new-line-num = (1+ line-num) then (1+ new-line-num)
+         ;; FIXME: doesn't quite work when adding lines and then trying to edit them!!!!
+         for new-line-num = (1+ orig-line-num) then (1+ new-line-num)
+         while (re-search-forward "\n" match-end-mark t)
+         for cur-match-line-num = (-> (helm-rg--current-jump-location) (plist-get :line-num))
+         do (put-text-property (1- (point)) (point) helm-rg--jump-location-text-property nil)
+         while (and cur-match-line-num (= orig-line-num cur-match-line-num))
          for new-entry-props = (list :file maybe-new-file-name
                                      :line-num new-line-num
                                      :match-results nil)
-         while (re-search-forward "\n" match-end-mark t)
          for output-line-prefix = (helm-rg--join-output-line
                                    :line-num-str (number-to-string new-line-num)
                                    :propertized-line "")
@@ -1316,7 +1321,9 @@ Merges stdout and stderr, and trims whitespace from the result."
          do (put-text-property (line-beginning-position) (line-end-position)
                                helm-rg--jump-location-text-property new-entry-props)
          finally (goto-char (1+ match-end-mark))
-         finally (set-marker match-end-mark nil))))))
+         finally (set-marker match-end-mark nil)
+         finally (beginning-of-line)
+         finally return (1- new-line-num))))))
 
 (cl-defun helm-rg--iterate-match-entries-for-bounce (&key file-visitor match-visitor end-of-file-fn)
   (goto-char helm-rg--beginning-of-bounce-content-mark)
@@ -1353,6 +1360,9 @@ Merges stdout and stderr, and trims whitespace from the result."
         (font-lock-mode 1))
       (goto-char (point-min)))))
 
+(defun helm-rg--make-line-number-prefix-regexp-for-bounce (line-num)
+  (rx-to-string `(: bol ,(number-to-string line-num) ":")))
+
 (cl-defun helm-rg--apply-matches-with-file-for-bounce
     (&key file-header-line-visitor match-line-visitor finalize-file-buffer-fn)
   (let (cur-line)
@@ -1379,24 +1389,25 @@ Merges stdout and stderr, and trims whitespace from the result."
                          (set-marker file-header-end-marker nil)))
        :match-visitor (lambda (match-loc)
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
-                          (let ((line-number-prefix-pattern
-                                 (rx-to-string `(: bol ,(number-to-string line-num) ":"))))
-                            (re-search-forward line-number-prefix-pattern))
+                          (-> line-num
+                              (helm-rg--make-line-number-prefix-regexp-for-bounce)
+                              (re-search-forward))
                           (let ((line-diff (- line-num cur-line)))
                             (cl-assert (or (and (= cur-line 1)
                                                 (= line-num 1))
                                            (> line-diff 0)))
                             (with-current-buffer scratch-buf
                               (forward-line line-diff))
-                            (let ((match-end
-                                   ;; Get the end of the text from this line of output -- it may
-                                   ;; span multiple lines. This is nil if the line is empty.
-                                   (next-single-property-change
-                                    (point) helm-rg--jump-location-text-property)))
-                              (funcall match-line-visitor scratch-buf match-loc match-end))
-                            ;; Update the line number in the scratch buffer to the one from this
-                            ;; match line.
-                            (setq cur-line line-num))))
+                            (let* ((match-end
+                                    ;; Get the end of the text from this line of output -- it may
+                                    ;; span multiple lines. This is nil if the line is empty.
+                                    (next-single-property-change
+                                     (point) helm-rg--jump-location-text-property))
+                                   (new-line-num
+                                    (funcall match-line-visitor scratch-buf match-loc match-end)))
+                              ;; Update the line number in the scratch buffer to the one from this
+                              ;; match line.
+                              (setq cur-line new-line-num)))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
                            (funcall finalize-file-buffer-fn file-header-loc scratch-buf)))))))
