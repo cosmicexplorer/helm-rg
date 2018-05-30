@@ -295,7 +295,7 @@ This is purely an interface change, and does not affect anything else."
   "Face for the ripgrep executable in the ripgrep invocation."
   :group 'helm-rg)
 
-(defface helm-rg-cmd-arg-face
+(defface helm-rg-inactive-arg-face
   '((t (:foreground "gray" :weight normal)))
   "Face for non-essential arguments in the ripgrep invocation."
   :group 'helm-rg)
@@ -371,9 +371,9 @@ case-sensitivity.")
     ((->> helm-rg--case-sensitive-argument-alist
           (helm-rg--alist-get-exhaustive helm-rg--case-sensitivity))
      :face helm-rg-active-arg-face)
-    ("--color=ansi" :face helm-rg-cmd-arg-face)
+    ("--color=ansi" :face helm-rg-inactive-arg-face)
     ((helm-rg--construct-match-color-format-arguments)
-     :face helm-rg-cmd-arg-face)
+     :face helm-rg-inactive-arg-face)
     ((unless (helm-rg--empty-glob-p helm-rg--glob-string)
        (list "-g" helm-rg--glob-string))
      :face helm-rg-active-arg-face)
