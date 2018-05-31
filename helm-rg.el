@@ -1395,14 +1395,16 @@ The buffer has already been advanced to the appropriate line."
   (save-excursion
     (let ((cur-match-entry (helm-rg--current-jump-location)))
       (cl-destructuring-bind (&key file line-num match-results) cur-match-entry
-        ;; TODO: if on a file header line, set line-num = 0, match-results = nil (???)
-        (helm-rg--apply-matches-with-file-for-bounce
-         :match-line-visitor (lambda (scratch-buf match-loc)
-                               (helm-rg--expand-match-lines-for-bounce
-                                before after match-loc scratch-buf))
-         ;; TODO: make the filter kwargs into a single object, or a single function.
-         :filter-to-file file
-         :filter-to-match cur-match-entry)))))
+        (if (not line-num)
+            ;; We are on a file header line.
+            (message "the current line is a file: %s and currently cannot be expanded from." file)
+          (helm-rg--apply-matches-with-file-for-bounce
+           :match-line-visitor (lambda (scratch-buf match-loc)
+                                 (helm-rg--expand-match-lines-for-bounce
+                                  before after match-loc scratch-buf))
+           ;; TODO: make the filter kwargs into a single object, or a single function.
+           :filter-to-file file
+           :filter-to-match cur-match-entry))))))
 
 (defun helm-rg--save-match-line-content-to-file-for-bounce
     (scratch-buf jump-loc maybe-new-file-name)
