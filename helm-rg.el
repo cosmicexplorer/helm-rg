@@ -1325,11 +1325,11 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-current-buffer scratch-buf
       (delete-region (line-beginning-position) (line-end-position))
       (insert match-text))
+    ;; If we have changed the file name, we need to rewrite the jump location for this line.
     (cl-destructuring-bind (&key file line-num match-results) jump-loc
       (unless (string= file maybe-new-file-name)
-        (let ((new-props (list :file maybe-new-file-name
-                               :line-num line-num
-                               :match-results match-results))
+        (let ((new-props
+               (helm-rg--copy-jump-location-and-override jump-loc (list :file maybe-new-file-name)))
               (inhibit-read-only t))
           (put-text-property (line-beginning-position) (line-end-position)
                              helm-rg--jump-location-text-property new-props))))))
@@ -1359,7 +1359,6 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defun helm-rg--insert-colorized-file-contents-for-bounce (scratch-buf file-header-loc)
   (cl-destructuring-bind (&key file) file-header-loc
     (with-current-buffer scratch-buf
-      ;; TODO: ???
       (insert-file-contents file t nil nil t)
       ;; Don't apply e.g. syntax highlighting if e.g. this file is very large (according to
       ;; `helm-rg-shallow-highlight-files-regexp').
@@ -1463,7 +1462,7 @@ Merges stdout and stderr, and trims whitespace from the result."
      :match-line-visitor #'helm-rg--rewrite-propertized-match-line-from-file-for-bounce
      :filter-to-file filter-to-file-name)))
 
-(defun helm-rg--validate-file-name-change-for-bounce (orig-file-name)
+(defun helm-rg--validate-file-name-change-and-propertize-for-bounce (orig-file-name)
   (let* ((new-file-name-maybe (buffer-substring (point) (line-end-position)))
          (inhibit-read-only t))
     ;; Rewrite the :file jump location text property with the new file name.
@@ -1506,7 +1505,7 @@ Merges stdout and stderr, and trims whitespace from the result."
      :file-header-line-visitor (lambda (file-header-loc)
                                  (cl-destructuring-bind (&key file) file-header-loc
                                    (setq maybe-new-file-name
-                                         (helm-rg--validate-file-name-change-for-bounce file))))
+                                         (helm-rg--validate-file-name-change-and-propertize-for-bounce file))))
      :match-line-visitor (lambda (scratch-buf jump-loc)
                            (helm-rg--save-match-line-content-to-file-for-bounce
                             scratch-buf jump-loc maybe-new-file-name))
