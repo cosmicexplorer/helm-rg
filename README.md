@@ -47,9 +47,12 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - [x] can insert markers on either side of each line to find the text added or removed
     - [x] can change the filename by editing the file line
         - [x] needs to reset all the file data for each entry if the file name is being changed!!!
-    - [ ] can expand the windows of text beyond single lines at a time
+    - [x] can expand the windows of text beyond single lines at a time
         - [x] and pop into another buffer for a quick view if you want
           - can use `helm-rg--visit-current-file-for-bounce`
+        - [ ] can expand up and down from file header lines to add lines from the top or bottom of the file!
+        - [ ] allows newlines in inserted text (not for files -- newlines are still removed there)
+            - need to use text properties to move by match results now, for everything that uses `helm-rg--apply-matches-with-file-for-bounce` basically
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
     - [x] don't color matches whenever file path matches `helm-rg-shallow-highlight-files-regexp`
