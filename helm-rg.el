@@ -601,7 +601,7 @@ BODY is executed in the original buffer, not the new temp buffer."
              expanded
              helm-rg--current-dir
              paths)
-   collect expanded))
+   collect (file-relative-name expanded helm-rg--current-dir)))
 
 (defun helm-rg--empty-glob-p (glob-str)
   (or (null glob-str)
