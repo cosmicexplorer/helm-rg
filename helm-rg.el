@@ -116,6 +116,14 @@
 ;; are still removed there)
 ;;             - need to use text properties to move by match results now, for
 ;; everything that uses `helm-rg--apply-matches-with-file-for-bounce' basically
+;;         - [ ] by default also re-read *any* lines within the expanded
+;; context from file, not just the new ones
+;;             - `helm-rg--spread-match-context' can be used to avoid doing
+;; this for lines you already have content for (???)
+;;             - or **actually**, maybe we just have a separate method to
+;; re-read the current line
+;;                 - (and maybe allow selecting a region too)
+;;     - [ ] visiting the file should go to the appropriate line of the file!
 ;; - [x] color all results in the file in the async action!
 ;;     - [x] don't recolor when switching to a different result in the same
 ;; file!
@@ -1695,6 +1703,7 @@ The buffer has already been advanced to the appropriate line."
 
 (defun helm-rg--spread-match-context (signed-amount)
   (interactive "p")
+  ;; TODO: add useful messaging!
   (cond
    ((zerop signed-amount))
    ((> signed-amount 0)
@@ -1706,10 +1715,12 @@ The buffer has already been advanced to the appropriate line."
 (defun helm-rg--expand-match-context (unsigned-amount)
   (interactive (list (if (numberp current-prefix-arg) (abs current-prefix-arg)
                        helm-rg--default-expand-match-lines-for-bounce)))
+  ;; TODO: add useful messaging!
   (helm-rg--expand-match-context-for-bounce unsigned-amount unsigned-amount))
 
 (defun helm-rg--visit-current-file-for-bounce ()
   (interactive)
+  ;; TODO: add useful messaging!
   ;; TODO: visit the right line number too!!! (if on a match line)
   (save-excursion
     (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
@@ -1798,7 +1809,12 @@ The buffer has already been advanced to the appropriate line."
 (defconst helm-rg--bounce-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-x C-r") #'helm-rg--bounce-refresh)
+    (define-key map (kbd "C-c C-r") #'helm-rg--bounce-refresh-current-file)
     (define-key map (kbd "C-x C-s") #'helm-rg--bounce-dump)
+    (define-key map (kbd "C-c C-s") #'helm-rg--bounce-dump-current-file)
+    (define-key map (kbd "C-c f") #'helm-rg--visit-current-file-for-bounce)
+    (define-key map (kbd "C-c e") #'helm-rg--expand-match-context)
+    (define-key map (kbd "C-c C-e") #'helm-rg--spread-match-context)
     map)
   "Keymap for `helm-rg--bounce-mode'.")
 
@@ -1834,7 +1850,9 @@ The buffer has already been advanced to the appropriate line."
 
 ;; Major modes
 (define-derived-mode helm-rg--bounce-mode fundamental-mode "BOUNCE"
-  "TODO: document this!"
+  "TODO: document this!
+
+\\{helm-rg--bounce-mode-map}"
   ;; TODO: consider whether other kwargs of this macro would be useful!
   :group 'helm-rg
   (font-lock-mode 1))
