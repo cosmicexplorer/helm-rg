@@ -39,6 +39,8 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 
 # TODO
 
+*items checked completed here are ready to be added to the docs above*
+
 - [x] make a keybinding to drop into an "edit mode" and edit file content inline in results like [`helm-ag`](https://github.com/syohex/emacs-helm-ag)
     - *currently called "bounce mode"* in the alpha stage
     - [x] needs to dedup results from the same line
@@ -48,10 +50,12 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - [x] can change the filename by editing the file line
         - [x] needs to reset all the file data for each entry if the file name is being changed!!!
     - [x] can expand the windows of text beyond single lines at a time
+        - using `helm-rg--expand-match-context` and/or `helm-rg--spread-match-context`
         - [x] and pop into another buffer for a quick view if you want
           - can use `helm-rg--visit-current-file-for-bounce`
         - [ ] can expand up and down from file header lines to add lines from the top or bottom of the file!
-        - [ ] allows newlines in inserted text (not for files -- newlines are still removed there)
+        - [ ] can use newlines in inserted text
+            - not for file names -- newlines are still removed there
             - would need to use text properties to move by match results then, for everything that uses `helm-rg--apply-matches-with-file-for-bounce` basically
     - [x] visiting the file should go to the appropriate line of the file!
 - [x] color all results in the file in the async action!
