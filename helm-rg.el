@@ -114,15 +114,9 @@
 ;; from the top or bottom of the file!
 ;;         - [ ] allows newlines in inserted text (not for files -- newlines
 ;; are still removed there)
-;;             - need to use text properties to move by match results now, for
-;; everything that uses `helm-rg--apply-matches-with-file-for-bounce' basically
-;;         - [ ] by default also re-read *any* lines within the expanded
-;; context from file, not just the new ones
-;;             - `helm-rg--spread-match-context' can be used to avoid doing
-;; this for lines you already have content for (???)
-;;             - or **actually**, maybe we just have a separate method to
-;; re-read the current line
-;;                 - (and maybe allow selecting a region too)
+;;             - would need to use text properties to move by match results
+;; then, for everything that uses `helm-rg--apply-matches-with-file-for-bounce'
+;; basically
 ;;     - [x] visiting the file should go to the appropriate line of the file!
 ;; - [x] color all results in the file in the async action!
 ;;     - [x] don't recolor when switching to a different result in the same
@@ -1611,32 +1605,6 @@ The buffer has already been advanced to the appropriate line."
                                     (helm-rg--do-file-rename-for-bounce
                                      scratch-buf orig-file maybe-new-file-name))))
      :filter-to-file filter-to-file-name)))
-
-;; (defun helm-rg--carriage-return-making-new-line-for-bounce ()
-;;   ;; TODO: error messaging for e.g. doing this on a file header line!
-;;   (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
-;;     (let* ((new-line-num (1+ line-num))
-;;            (new-props
-;;             ;; Insert the prefix of the line here, and give it the new jump location, which is
-;;             ;; returned by `helm-rg--insert-new-match-line-for-bounce'.
-;;             (helm-rg--insert-new-match-line-for-bounce
-;;              :file file
-;;              :line-to-insert new-line-num
-;;              :line-contents ""
-;;              :in-middle-of-line-p t)))
-;;       ;; Now scan the file and select the single entry we just added, and read its output from the
-;;       ;; file's buffer (which is magically on the right line).
-;;       (helm-rg--apply-matches-with-file-for-bounce
-;;        :match-line-visitor (lambda (scratch-buf match-loc)
-;;                              (let ((cur-line-in-file
-;;                                     (with-current-buffer scratch-buf
-;;                                       (buffer-substring
-;;                                        (line-beginning-position) (line-end-position)))))
-;;                                (delete-region (line-beginning-position) (line-end-position))
-;;                                ;; FIXME: rest of this function!
-;;                                (insert cur-line-in-file)))
-;;        :filter-to-file file
-;;        :filter-to-match new-props))))
 
 (defun helm-rg--make-buffer-for-bounce ()
   ;; Make a new buffer instead of assuming you'll only want one session at a time. This will become
