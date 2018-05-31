@@ -1291,14 +1291,53 @@ Merges stdout and stderr, and trims whitespace from the result."
       (delete-region (point) (line-end-position))
       (insert line-to-insert))))
 
-;; (defun helm-rg--find-expanded-match-context-for-bounce (before after match-loc match-end)
-;;   (let (())))
+(defun helm-rg--insert-new-match-line-for-bounce (file line-to-insert)
+  (let ((inhibit-read-only t))
+    (insert (helm-rg--join-output-line
+             :line-num-str (number-to-string line-to-insert)
+             :propertized-line ""))
+    ;; We inserted a blank line with no newline. Time to change that.
+    (insert "\n")
+    ;; Back to the line we just inserted.
+    (helm-rg--up-for-bounce)
+    ;; This line is only our prefixed line number now.
+    (helm-rg--propertize-line-number-prefix-range
+     (line-beginning-position) (line-end-position))
+    (let ((new-entry-props (list :file file
+                                 :line-num line-to-insert
+                                 :match-results nil)))
+      (put-text-property (line-beginning-position) (line-end-position)
+                         helm-rg--jump-location-text-property new-entry-props))))
 
-;; (defun helm-rg--expand-match-lines (before after match-loc scratch-buf match-end)
-;;   (cl-loop for x from 0 upto before
-;;            do (forward-line -1)
-;;            do (cl-destructuring-bind (&key file line-num)))
-;;   (let (())))
+(defun helm-rg--expand-match-lines-for-bounce (before after match-loc scratch-buf)
+  (cl-destructuring-bind (&key ((:file orig-file))
+                               ((:line-num orig-line-num))
+                               ((:match-results orig-match-results)))
+      match-loc
+    ;; Insert any "before" lines.
+    (save-excursion
+      (cl-loop
+       for line-to-insert from (1- orig-line-num) downto (- orig-line-num before)
+       do (helm-rg--up-for-bounce)
+       do (cl-destructuring-bind (&key file line-num match-results)
+              (helm-rg--current-jump-location)
+            (cl-assert (string= file orig-file))
+            ;; If it is not equal, and the lines are sorted, then the line we wish to insert must be
+            ;; >= any line above, at all times (induction).
+            (unless (= line-num line-to-insert)
+              ;; Our line is greater than this one. Insert ours after this line.
+              (helm-rg--down-for-bounce)
+              (helm-rg--insert-new-match-line-for-bounce file line-to-insert)))))
+    ;; Insert any "after" lines. We need a save-excursion because we need to start at the middle
+    ;; here.
+    (cl-loop
+     for line-to-insert from (1+ orig-line-num) upto (+ orig-line-num after)
+     do (helm-rg--down-for-bounce)
+     do (cl-destructuring-bind (&key file line-num match-results)
+            (helm-rg--current-jump-location)
+          (unless (= line-num line-to-insert)
+            ;; Our line is less than this one -- insert it above (no motion).
+            (helm-rg--insert-new-match-line-for-bounce file line-to-insert))))))
 
 (defun helm-rg--expand-match-context-for-bounce (before after)
   (cl-check-type before natnum)
@@ -1309,7 +1348,7 @@ Merges stdout and stderr, and trims whitespace from the result."
       (helm-rg--apply-matches-with-file-for-bounce
        :match-line-visitor (lambda (scratch-buf match-loc)
                              (cl-assert (helm-rg--match-entry-equals cur-match-entry match-loc))
-                             (helm-rg--expand-match-lines
+                             (helm-rg--expand-match-lines-for-bounce
                               before after match-loc scratch-buf))
        ;; TODO: make the filter kwargs into a single object, or a single function.
        :filter-to-file file
