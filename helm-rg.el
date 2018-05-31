@@ -845,8 +845,9 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
    do (kill-buffer opened-buf)
    finally (setq helm-rg--cur-persistent-bufs nil))
   (helm-rg--kill-proc-if-live helm-rg--process-name)
-  (helm-rg--kill-bufs-if-live helm-rg--helm-buffer-name
-                              helm-rg--process-buffer-name
+  ;; Don't delete `helm-rg--helm-buffer-name' to support using e.g. `helm-resume'.
+  ;; TODO: add testing for this use case.
+  (helm-rg--kill-bufs-if-live helm-rg--process-buffer-name
                               helm-rg--error-buffer-name)
   (setq helm-rg--glob-string nil
         helm-rg--paths-to-search nil
