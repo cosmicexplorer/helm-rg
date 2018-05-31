@@ -874,7 +874,7 @@ Call `helm-rg--async-action', but push the buffer corresponding to CAND to
           (helm-rg--make-face 'helm-rg-directory-header-face helm-rg--current-dir)))
 
 (defun helm-rg--current-jump-location (&optional object)
-  (get-text-property (point) helm-rg--jump-location-text-property object))
+  (get-text-property (line-beginning-position) helm-rg--jump-location-text-property object))
 
 (defun helm-rg--get-jump-location-from-line (line)
   "Get the value of `helm-rg--jump-location-text-property' at the start of LINE."
@@ -1263,16 +1263,18 @@ Merges stdout and stderr, and trims whitespace from the result."
   (forward-line 1))
 
 (defun helm-rg--propertize-match-line-from-file-for-bounce (line-to-propertize jump-loc)
-  (cl-destructuring-bind (&key file line-num match-results) jump-loc
-    ;; Apply face to matches within the text to insert.
-    (cl-loop for match in match-results
-             do (cl-destructuring-bind (&key beg end) match
-                  (put-text-property beg end 'face 'helm-rg-match-text-face
-                                     line-to-propertize)))
-    ;; Apply the jump location to the text to insert.
-    (put-text-property 0 (length line-to-propertize) helm-rg--jump-location-text-property jump-loc
-                       line-to-propertize)
-    line-to-propertize))
+  ;; Copy the input string, because we will be mutating it.
+  (let ((resulting-line (copy-seq line-to-propertize)))
+    (cl-destructuring-bind (&key file line-num match-results) jump-loc
+      ;; Apply face to matches within the text to insert.
+      (cl-loop for match in match-results
+               do (cl-destructuring-bind (&key beg end) match
+                    (put-text-property beg end 'face 'helm-rg-match-text-face
+                                       resulting-line)))
+      ;; Apply the jump location to the text to insert.
+      (put-text-property 0 (length resulting-line) helm-rg--jump-location-text-property jump-loc
+                         resulting-line)
+      resulting-line)))
 
 (defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce (scratch-buf jump-loc match-end)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
@@ -1286,15 +1288,26 @@ Merges stdout and stderr, and trims whitespace from the result."
       (when match-end
         (delete-region (point) match-end))
       (insert (-> cur-line-in-file-to-propertize
-                  (copy-seq)
                   (helm-rg--propertize-match-line-from-file-for-bounce jump-loc))))
     ;; We don't insert a newline -- go to the next line.
     (forward-char)
     line-num))
 
-;; (defun helm-rg--expand-match-context-for-bounce (before after)
-;;   (cl-check-type before natnum)
-;;   (cl-check-type after natnum))
+;; (defun helm-rg--find-expanded-match-context-for-bounce (before after match-end)
+;;   ())
+
+(defun helm-rg--expand-match-context-for-bounce (before after)
+  (cl-check-type before natnum)
+  (cl-check-type after natnum)
+  (let ((cur-match-entry (helm-rg--current-jump-location)))
+    (cl-destructuring-bind (&key file line-num match-results) cur-match-entry
+      ;; TODO: if on a file header line, set line-num = 0, match-results = nil (???)
+      (helm-rg--apply-matches-with-file-for-bounce
+       :match-line-visitor (lambda (scratch-buf _match-loc match-end)
+                             ())
+       ;; TODO: make the filter kwargs into a single object, or a single function
+       :filter-to-file file
+       :filter-to-match cur-match-entry))))
 
 (defun helm-rg--save-match-line-content-to-file-for-bounce
     (scratch-buf jump-loc match-end maybe-new-file-name)
@@ -1322,6 +1335,8 @@ Merges stdout and stderr, and trims whitespace from the result."
          for new-line-num = (1+ orig-line-num) then (1+ new-line-num)
          while (re-search-forward "\n" match-end-mark t)
          for cur-match-line-num = (-> (helm-rg--current-jump-location) (plist-get :line-num))
+         ;; This is supposed to depropertize the newline, so that the previous line isn't registered
+         ;; as having a newline at the end (otherwise we keep inserting it).
          do (put-text-property (1- (point)) (point) helm-rg--jump-location-text-property nil)
          while (and cur-match-line-num (= orig-line-num cur-match-line-num))
          for new-entry-props = (list :file maybe-new-file-name
@@ -1598,10 +1613,13 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defun helm-rg--visit-current-file-for-bounce ()
   (interactive)
+  ;; TODO: visit the right line number too!!! (if on a match line)
   (save-excursion
-    (beginning-of-line)
     (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
       (let ((buf-for-file (find-file-noselect file)))
+        ;; We could have a separate defcustom for this, but I think that's a setting nobody will
+        ;; want to tweak, and if they do, they can override it very easily by making an interactive
+        ;; method and let-binding `helm-rg-display-buffer-alternate-method' before calling this one.
         (funcall helm-rg-display-buffer-alternate-method buf-for-file)))))
 
 
