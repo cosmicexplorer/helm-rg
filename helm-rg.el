@@ -509,6 +509,12 @@ that process's buffer. See `helm-rg--parse-process-output' for usage.")
 (defvar-local helm-rg--beginning-of-bounce-content-mark nil
   "Contains a marker pointing to the beginning of the match results in a `helm-rg--bounce' buffer.")
 
+(defvar-local helm-rg--do-font-locking nil
+  "If t, colorize the file text as it would be in an editor.
+
+This may be expensive for larger files, so it is turned off if
+`helm-rg-shallow-highlight-files-regexp' is a regexp matching the file's path.")
+
 
 ;; Utilities
 (defun helm-rg--alist-get-exhaustive (key alist)
@@ -1279,14 +1285,21 @@ Merges stdout and stderr, and trims whitespace from the result."
                          resulting-line)
       resulting-line)))
 
+(defun helm-rg--line-from-corresponding-file-for-bounce (scratch-buf)
+  "Get the corresponding line in the file's buffer.
+
+The buffer has already been advanced to the appropriate line."
+  (with-current-buffer scratch-buf
+    (let ((beg (line-beginning-position))
+          (end (line-end-position)))
+      (when helm-rg--do-font-locking
+        (font-lock-ensure beg end))
+      (buffer-substring beg end))))
+
 (defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce (scratch-buf jump-loc)
   (cl-destructuring-bind (&key file line-num match-results) jump-loc
     (let* ((cur-line-in-file-to-propertize
-            ;; Get the corresponding line in the file's buffer (which has already been advanced to
-            ;; the appropriate line).
-            (with-current-buffer scratch-buf
-              (font-lock-ensure (line-beginning-position) (line-end-position))
-              (buffer-substring (line-beginning-position) (line-end-position))))
+            (helm-rg--line-from-corresponding-file-for-bounce scratch-buf))
            (line-to-insert
             (helm-rg--propertize-match-line-from-file-for-bounce
              cur-line-in-file-to-propertize jump-loc)))
@@ -1335,8 +1348,7 @@ Merges stdout and stderr, and trims whitespace from the result."
               ;; Our line is greater than this one. Insert ours after this line.
               (helm-rg--down-for-bounce)
               (let ((cur-line-in-file
-                     (with-current-buffer scratch-buf
-                       (buffer-substring (line-beginning-position) (line-end-position)))))
+                     (helm-rg--line-from-corresponding-file-for-bounce scratch-buf)))
                 (helm-rg--insert-new-match-line-for-bounce
                  :file orig-file
                  :line-to-insert line-to-insert
@@ -1357,8 +1369,7 @@ Merges stdout and stderr, and trims whitespace from the result."
           ;; file's header).
           (unless (and cur-line-num (= cur-line-num line-to-insert))
             (let ((cur-line-in-file
-                   (with-current-buffer scratch-buf
-                     (buffer-substring (line-beginning-position) (line-end-position)))))
+                   (helm-rg--line-from-corresponding-file-for-bounce scratch-buf)))
               ;; Our line is less than this one -- insert it above (no motion).
               (helm-rg--insert-new-match-line-for-bounce
                :file orig-file
@@ -1432,7 +1443,8 @@ Merges stdout and stderr, and trims whitespace from the result."
       (unless (and helm-rg-shallow-highlight-files-regexp
                    (string-match-p helm-rg-shallow-highlight-files-regexp file))
         (normal-mode)
-        (font-lock-mode 1))
+        (font-lock-mode 1)
+        (setq-local helm-rg--do-font-locking t))
       (goto-char (point-min)))))
 
 (defun helm-rg--file-equals (file1 file2)
@@ -1516,7 +1528,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (let ((inhibit-read-only t))
       (delete-region (point) (line-end-position))
       (insert file)
-      (put-text-property (point) (line-end-position)
+      (put-text-property (line-beginning-position) (line-end-position)
                          helm-rg--jump-location-text-property file-header-loc))))
 
 (defun helm-rg--reread-entries-from-file-for-bounce (just-this-file-p)
