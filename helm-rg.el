@@ -1836,6 +1836,10 @@ reference with the interactive command `helm-rg-display-help'.
          (helm-rg--case-sensitivity
           (or helm-rg--case-sensitivity
               helm-rg-default-case-sensitivity)))
+    ;; FIXME: make all the `defvar's into buffer-local variables (or give them local counterparts)?
+    ;; the idea is that `helm-resume' can be applied and work with the async action -- currently it
+    ;; tries to find a buffer which we killed in the cleanup here when we do the async action
+    ;; (i think)
     (unwind-protect (helm-rg--do-helm-rg rg-pattern)
       (helm-rg--unwind-cleanup))))
 
