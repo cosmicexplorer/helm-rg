@@ -1291,16 +1291,15 @@ Merges stdout and stderr, and trims whitespace from the result."
       (delete-region (point) (line-end-position))
       (insert line-to-insert))))
 
-(defun helm-rg--insert-new-match-line-for-bounce (file line-to-insert)
+(defun helm-rg--insert-new-match-line-for-bounce (file line-to-insert line-contents)
   (let ((inhibit-read-only t))
     (insert (helm-rg--join-output-line
              :line-num-str (number-to-string line-to-insert)
-             :propertized-line ""))
-    ;; We inserted a blank line with no newline. Time to change that.
+             :propertized-line line-contents))
+    ;; We inserted a line with no newline. Time to change that.
     (insert "\n")
     ;; Back to the line we just inserted.
     (helm-rg--up-for-bounce)
-    ;; This line is only our prefixed line number now.
     (helm-rg--propertize-line-number-prefix-range
      (line-beginning-position) (line-end-position))
     (let ((new-entry-props (list :file file
@@ -1319,40 +1318,57 @@ Merges stdout and stderr, and trims whitespace from the result."
       (cl-loop
        for line-to-insert from (1- orig-line-num) downto (- orig-line-num before)
        do (helm-rg--up-for-bounce)
-       do (cl-destructuring-bind (&key file line-num match-results)
-              (helm-rg--current-jump-location)
-            (cl-assert (string= file orig-file))
+       for cur-loc = (helm-rg--current-jump-location)
+       do (let ((cur-file (plist-get cur-loc :file))
+                (cur-line-num (plist-get cur-loc :line-num)))
+            (cl-assert (string= cur-file orig-file))
             ;; If it is not equal, and the lines are sorted, then the line we wish to insert must be
             ;; >= any line above, at all times (induction).
-            (unless (= line-num line-to-insert)
+            ;; Checking for line-num means this will always insert after a file header (this file's
+            ;; header).
+            (unless (and cur-line-num (= cur-line-num line-to-insert))
               ;; Our line is greater than this one. Insert ours after this line.
               (helm-rg--down-for-bounce)
-              (helm-rg--insert-new-match-line-for-bounce file line-to-insert)))))
+              (->> (with-current-buffer scratch-buf
+                     (forward-line -1)
+                     (buffer-substring (line-beginning-position) (line-end-position)))
+                   (helm-rg--insert-new-match-line-for-bounce orig-file line-to-insert))))))
+    (with-current-buffer scratch-buf
+      (forward-line before))
     ;; Insert any "after" lines. We need a save-excursion because we need to start at the middle
     ;; here.
     (cl-loop
      for line-to-insert from (1+ orig-line-num) upto (+ orig-line-num after)
      do (helm-rg--down-for-bounce)
-     do (cl-destructuring-bind (&key file line-num match-results)
-            (helm-rg--current-jump-location)
-          (unless (= line-num line-to-insert)
-            ;; Our line is less than this one -- insert it above (no motion).
-            (helm-rg--insert-new-match-line-for-bounce file line-to-insert))))))
+     for cur-loc = (helm-rg--current-jump-location)
+     do (let ((cur-file (plist-get cur-loc :file))
+              (cur-line-num (plist-get cur-loc :line-num)))
+          ;; Checking for line-num means this will always insert before a file header (the next
+          ;; file's header).
+          (unless (and cur-line-num (= cur-line-num line-to-insert))
+            (->> (with-current-buffer scratch-buf
+                   (forward-line 1)
+                   (buffer-substring (line-beginning-position) (line-end-position)))
+                 ;; Our line is less than this one -- insert it above (no motion).
+                 (helm-rg--insert-new-match-line-for-bounce orig-file line-to-insert)))))))
 
 (defun helm-rg--expand-match-context-for-bounce (before after)
+  ;; TODO: allow doing this expansion on a file header line to expand from the top or bottom of a
+  ;; file!
   (cl-check-type before natnum)
   (cl-check-type after natnum)
-  (let ((cur-match-entry (helm-rg--current-jump-location)))
-    (cl-destructuring-bind (&key file line-num match-results) cur-match-entry
-      ;; TODO: if on a file header line, set line-num = 0, match-results = nil (???)
-      (helm-rg--apply-matches-with-file-for-bounce
-       :match-line-visitor (lambda (scratch-buf match-loc)
-                             (cl-assert (helm-rg--match-entry-equals cur-match-entry match-loc))
-                             (helm-rg--expand-match-lines-for-bounce
-                              before after match-loc scratch-buf))
-       ;; TODO: make the filter kwargs into a single object, or a single function.
-       :filter-to-file file
-       :filter-to-match cur-match-entry))))
+  (save-excursion
+    (let ((cur-match-entry (helm-rg--current-jump-location)))
+      (cl-destructuring-bind (&key file line-num match-results) cur-match-entry
+        ;; TODO: if on a file header line, set line-num = 0, match-results = nil (???)
+        (helm-rg--apply-matches-with-file-for-bounce
+         :match-line-visitor (lambda (scratch-buf match-loc)
+                               (cl-assert (helm-rg--match-entry-equals cur-match-entry match-loc))
+                               (helm-rg--expand-match-lines-for-bounce
+                                before after match-loc scratch-buf))
+         ;; TODO: make the filter kwargs into a single object, or a single function.
+         :filter-to-file file
+         :filter-to-match cur-match-entry)))))
 
 (defun helm-rg--save-match-line-content-to-file-for-bounce
     (scratch-buf jump-loc maybe-new-file-name)
@@ -1379,14 +1395,14 @@ Merges stdout and stderr, and trims whitespace from the result."
    while (not (eobp))
    for file-header-loc = (helm-rg--current-jump-location)
    for cur-file = (plist-get file-header-loc :file)
-   do (funcall file-visitor file-header-loc)
+   do (funcall file-visitor (msg-eval file-header-loc :pre "iterate"))
    do (cl-loop
        for match-loc = (helm-rg--current-jump-location)
        for match-file = (plist-get match-loc :file)
        while (string= cur-file match-file)
-       do (funcall match-visitor match-loc))
+       do (funcall match-visitor (msg-eval match-loc :pre "iterate")))
    if end-of-file-fn
-   do (funcall end-of-file-fn file-header-loc)))
+   do (funcall end-of-file-fn (msg-eval file-header-loc :pre "iterate"))))
 
 (defun helm-rg--process-line-numbered-matches-for-bounce ()
   (helm-rg--iterate-match-entries-for-bounce
@@ -1430,6 +1446,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (helm-rg--with-named-temp-buffer scratch-buf
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
+                       (msg-eval file-header-loc)
                        (cl-destructuring-bind (&key file) file-header-loc
                          (setq is-matching-file-p
                                (if filter-to-file
@@ -1442,6 +1459,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                          (funcall file-header-line-visitor file-header-loc))
                        (helm-rg--down-for-bounce))
        :match-visitor (lambda (match-loc)
+                        (msg-eval match-loc)
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
                           (re-search-forward
                            (helm-rg--make-line-number-prefix-regexp-for-bounce line-num))
@@ -1463,6 +1481,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                             (helm-rg--down-for-bounce))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
+                           (msg-eval file-header-loc :pre "eof")
                            (when is-matching-file-p
                              (funcall finalize-file-buffer-fn file-header-loc scratch-buf))))))
     ;; FIXME: fix the error message here
@@ -1559,6 +1578,10 @@ Merges stdout and stderr, and trims whitespace from the result."
                                      scratch-buf orig-file maybe-new-file-name))))
      :filter-to-file filter-to-file-name)))
 
+(defun helm-rg--carriage-return-making-new-line-for-bounce ()
+  (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
+    ))
+
 (defun helm-rg--make-buffer-for-bounce ()
   ;; Make a new buffer instead of assuming you'll only want one session at a time. This will become
   ;; especially useful when live editing is introduced.
@@ -1622,12 +1645,19 @@ Merges stdout and stderr, and trims whitespace from the result."
     (helm-rg--save-entries-to-file-for-bounce t)))
 
 (defun helm-rg--spread-match-context (signed-amount)
-  (interactive "p"))
+  (interactive "p")
+  (cond
+   ((zerop signed-amount))
+   ((> signed-amount 0)
+    (helm-rg--expand-match-context-for-bounce 0 signed-amount))
+   (t
+    (cl-assert (< signed-amount 0))
+    (helm-rg--expand-match-context-for-bounce (abs signed-amount) 0))))
 
 (defun helm-rg--expand-match-context (unsigned-amount)
   (interactive (list (if (numberp current-prefix-arg) (abs current-prefix-arg)
                        helm-rg--default-expand-match-lines-for-bounce)))
-  (message "%d" unsigned-amount))
+  (helm-rg--expand-match-context-for-bounce unsigned-amount unsigned-amount))
 
 (defun helm-rg--visit-current-file-for-bounce ()
   (interactive)
