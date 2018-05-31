@@ -1553,6 +1553,8 @@ Merges stdout and stderr, and trims whitespace from the result."
     (with-helm-buffer
       (copy-to-buffer new-buf (point-min) (point-max)))
     (with-current-buffer new-buf
+      ;; TODO: add test to ensure we are in the same directory!
+      (cd helm-rg--current-dir)
       (helm-rg--bounce-mode)
       ;; Fix up, then advance past the end of the header.
       (helm-rg--freeze-header-for-bounce helm-rg--last-argv)
