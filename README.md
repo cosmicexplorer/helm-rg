@@ -57,7 +57,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
             - `helm-rg--spread-match-context` can be used to avoid doing this for lines you already have content for (???)
             - or **actually**, maybe we just have a separate method to re-read the current line
                 - (and maybe allow selecting a region too)
-    - [ ] visiting the file should go to the appropriate line of the file!
+    - [x] visiting the file should go to the appropriate line of the file!
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
     - [x] don't color matches whenever file path matches `helm-rg-shallow-highlight-files-regexp`

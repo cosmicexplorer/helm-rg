@@ -123,7 +123,7 @@
 ;;             - or **actually**, maybe we just have a separate method to
 ;; re-read the current line
 ;;                 - (and maybe allow selecting a region too)
-;;     - [ ] visiting the file should go to the appropriate line of the file!
+;;     - [x] visiting the file should go to the appropriate line of the file!
 ;; - [x] color all results in the file in the async action!
 ;;     - [x] don't recolor when switching to a different result in the same
 ;; file!
@@ -1728,7 +1728,11 @@ The buffer has already been advanced to the appropriate line."
         ;; We could have a separate defcustom for this, but I think that's a setting nobody will
         ;; want to tweak, and if they do, they can override it very easily by making an interactive
         ;; method and let-binding `helm-rg-display-buffer-alternate-method' before calling this one.
-        (funcall helm-rg-display-buffer-alternate-method buf-for-file)))))
+        (funcall helm-rg-display-buffer-alternate-method buf-for-file)
+        (when line-num
+          (goto-char (point-min))
+          (forward-line (1- line-num)))
+        (recenter)))))
 
 
 ;; Toggles and settings
