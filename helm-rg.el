@@ -1328,7 +1328,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (cl-destructuring-bind (&key file line-num match-results) jump-loc
       (unless (string= file maybe-new-file-name)
         (let ((new-props (list :file maybe-new-file-name
-                               :line-num orig-line-num
+                               :line-num line-num
                                :match-results match-results))
               (inhibit-read-only t))
           (put-text-property (line-beginning-position) (line-end-position)
@@ -1479,11 +1479,28 @@ Merges stdout and stderr, and trims whitespace from the result."
   (forward-line 1)
   (beginning-of-line))
 
+(defun helm-rg--do-file-rename-for-bounce (scratch-buf orig-file new-file)
+  (with-current-buffer scratch-buf
+    (let ((prev-scratch-buf-name (buffer-name)))
+      (write-file new-file t)
+      (erase-buffer)
+      (set-visited-file-name nil t)
+      (rename-buffer prev-scratch-buf-name)))
+  ;; if any buffer visiting, switch to the new file!
+  (cl-loop for buf in (helm-file-buffers orig-file)
+           do (with-current-buffer buf
+                (set-visited-file-name new-file t t)
+                ;; Confirm reverting the buffer.
+                (revert-buffer nil nil t)))
+  ;; Move the original file into the trash.
+  (move-file-to-trash orig-file))
+
 (defun helm-rg--save-entries-to-file-for-bounce (just-this-file-p)
   (let ((filter-to-file-name (when just-this-file-p
                                (cl-destructuring-bind (&key file line-num match-results)
                                    (helm-rg--current-jump-location)
                                  file)))
+        ;; The content of the file header -- if it is different, we rename the file.
         maybe-new-file-name)
     (helm-rg--apply-matches-with-file-for-bounce
      :file-header-line-visitor (lambda (file-header-loc)
@@ -1497,22 +1514,11 @@ Merges stdout and stderr, and trims whitespace from the result."
                                 (cl-destructuring-bind (&key ((:file orig-file))) file-header-loc
                                   (if (string= orig-file maybe-new-file-name)
                                       (with-current-buffer scratch-buf
+                                        ;; Commit our edits to the various lines of this file to
+                                        ;; disk.
                                         (save-buffer))
-                                    (with-current-buffer scratch-buf
-                                      (let ((prev-scratch-buf-name (buffer-name)))
-                                        ;; TODO: ???
-                                        (write-file maybe-new-file-name t)
-                                        (erase-buffer)
-                                        (set-visited-file-name nil t)
-                                        (rename-buffer prev-scratch-buf-name)))
-                                    ;; if any buffer visiting, switch to the new file!
-                                    (cl-loop for buf in (helm-file-buffers orig-file)
-                                             do (with-current-buffer buf
-                                                  (set-visited-file-name maybe-new-file-name t t)
-                                                  ;; Confirm reverting the buffer.
-                                                  (revert-buffer nil nil t)))
-                                    ;; Move the original file into the trash.
-                                    (move-file-to-trash orig-file))))
+                                    (helm-rg--do-file-rename-for-bounce
+                                     scratch-buf orig-file maybe-new-file-name))))
      :filter-to-file filter-to-file-name)))
 
 (defun helm-rg--make-buffer-for-bounce ()
