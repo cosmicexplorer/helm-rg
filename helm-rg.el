@@ -1395,14 +1395,14 @@ Merges stdout and stderr, and trims whitespace from the result."
    while (not (eobp))
    for file-header-loc = (helm-rg--current-jump-location)
    for cur-file = (plist-get file-header-loc :file)
-   do (funcall file-visitor (msg-eval file-header-loc :pre "iterate"))
+   do (funcall file-visitor file-header-loc)
    do (cl-loop
        for match-loc = (helm-rg--current-jump-location)
        for match-file = (plist-get match-loc :file)
        while (string= cur-file match-file)
-       do (funcall match-visitor (msg-eval match-loc :pre "iterate")))
+       do (funcall match-visitor match-loc))
    if end-of-file-fn
-   do (funcall end-of-file-fn (msg-eval file-header-loc :pre "iterate"))))
+   do (funcall end-of-file-fn file-header-loc)))
 
 (defun helm-rg--process-line-numbered-matches-for-bounce ()
   (helm-rg--iterate-match-entries-for-bounce
@@ -1446,7 +1446,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (helm-rg--with-named-temp-buffer scratch-buf
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
-                       (msg-eval file-header-loc)
+                       file-header-loc
                        (cl-destructuring-bind (&key file) file-header-loc
                          (setq is-matching-file-p
                                (if filter-to-file
@@ -1459,7 +1459,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                          (funcall file-header-line-visitor file-header-loc))
                        (helm-rg--down-for-bounce))
        :match-visitor (lambda (match-loc)
-                        (msg-eval match-loc)
+                        match-loc
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
                           (re-search-forward
                            (helm-rg--make-line-number-prefix-regexp-for-bounce line-num))
@@ -1481,7 +1481,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                             (helm-rg--down-for-bounce))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
-                           (msg-eval file-header-loc :pre "eof")
+                           file-header-loc
                            (when is-matching-file-p
                              (funcall finalize-file-buffer-fn file-header-loc scratch-buf))))))
     ;; FIXME: fix the error message here
