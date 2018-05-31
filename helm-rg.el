@@ -1320,15 +1320,13 @@ The buffer has already been advanced to the appropriate line."
       (delete-region (point) (line-end-position))
       (insert line-to-insert))))
 
-(cl-defun helm-rg--insert-new-match-line-for-bounce
-    (&key file line-to-insert line-contents in-middle-of-line-p)
+(cl-defun helm-rg--insert-new-match-line-for-bounce (&key file line-to-insert line-contents)
   (let* ((output-line (helm-rg--join-output-line
                        :line-num-str (number-to-string line-to-insert)
                        :propertized-line line-contents))
          (inhibit-read-only t))
-    (if in-middle-of-line-p (insert (format "\n%s" output-line))
-      (insert (format "%s\n" output-line))
-      (helm-rg--up-for-bounce))
+    (insert (format "%s\n" output-line))
+    (helm-rg--up-for-bounce)
     (helm-rg--propertize-line-number-prefix-range
      (line-beginning-position) (point))
     (let ((new-entry-props (list :file file
@@ -1358,11 +1356,12 @@ The buffer has already been advanced to the appropriate line."
             ;; header).
             (with-current-buffer scratch-buf
               (forward-line -1))
+            ;; Unless we are already on the correct line.
             (unless (and cur-line-num (= cur-line-num line-to-insert))
-              ;; Our line is greater than this one. Insert ours after this line.
-              (helm-rg--down-for-bounce)
               (let ((cur-line-in-file
                      (helm-rg--line-from-corresponding-file-for-bounce scratch-buf)))
+                ;; Our line is greater than this one. Insert ours after this line.
+                (helm-rg--down-for-bounce)
                 (helm-rg--insert-new-match-line-for-bounce
                  :file orig-file
                  :line-to-insert line-to-insert

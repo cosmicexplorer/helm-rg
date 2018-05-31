@@ -57,6 +57,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
             - `helm-rg--spread-match-context` can be used to avoid doing this for lines you already have content for (???)
             - or **actually**, maybe we just have a separate method to re-read the current line
                 - (and maybe allow selecting a region too)
+                - alternatively, develop a more intense system of marking "changed" lines. i don't think this would be a useful investment.
     - [x] visiting the file should go to the appropriate line of the file!
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
