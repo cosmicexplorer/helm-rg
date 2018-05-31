@@ -108,7 +108,8 @@
 ;;         - [x] needs to reset all the file data for each entry if the file
 ;; name is being changed!!!
 ;;     - [ ] can expand the windows of text beyond single lines at a time
-;;         - and pop into another buffer for a quick view if you want
+;;         - [x] and pop into another buffer for a quick view if you want
+;;           - can use `helm-rg--visit-current-file-for-bounce'
 ;; - [x] color all results in the file in the async action!
 ;;     - [x] don't recolor when switching to a different result in the same
 ;; file!
