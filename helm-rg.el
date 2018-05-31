@@ -1326,11 +1326,12 @@ Merges stdout and stderr, and trims whitespace from the result."
             ;; >= any line above, at all times (induction).
             ;; Checking for line-num means this will always insert after a file header (this file's
             ;; header).
+            (with-current-buffer scratch-buf
+              (forward-line -1))
             (unless (and cur-line-num (= cur-line-num line-to-insert))
               ;; Our line is greater than this one. Insert ours after this line.
               (helm-rg--down-for-bounce)
               (->> (with-current-buffer scratch-buf
-                     (forward-line -1)
                      (buffer-substring (line-beginning-position) (line-end-position)))
                    (helm-rg--insert-new-match-line-for-bounce orig-file line-to-insert))))))
     (with-current-buffer scratch-buf
@@ -1343,11 +1344,12 @@ Merges stdout and stderr, and trims whitespace from the result."
      for cur-loc = (helm-rg--current-jump-location)
      do (let ((cur-file (plist-get cur-loc :file))
               (cur-line-num (plist-get cur-loc :line-num)))
+          (with-current-buffer scratch-buf
+            (forward-line 1))
           ;; Checking for line-num means this will always insert before a file header (the next
           ;; file's header).
           (unless (and cur-line-num (= cur-line-num line-to-insert))
             (->> (with-current-buffer scratch-buf
-                   (forward-line 1)
                    (buffer-substring (line-beginning-position) (line-end-position)))
                  ;; Our line is less than this one -- insert it above (no motion).
                  (helm-rg--insert-new-match-line-for-bounce orig-file line-to-insert)))))))
@@ -1395,14 +1397,14 @@ Merges stdout and stderr, and trims whitespace from the result."
    while (not (eobp))
    for file-header-loc = (helm-rg--current-jump-location)
    for cur-file = (plist-get file-header-loc :file)
-   do (funcall file-visitor file-header-loc)
+   do (funcall file-visitor (msg-eval file-header-loc :pre "iterate"))
    do (cl-loop
        for match-loc = (helm-rg--current-jump-location)
        for match-file = (plist-get match-loc :file)
        while (string= cur-file match-file)
-       do (funcall match-visitor match-loc))
+       do (funcall match-visitor (msg-eval match-loc :pre "iterate")))
    if end-of-file-fn
-   do (funcall end-of-file-fn file-header-loc)))
+   do (funcall end-of-file-fn (msg-eval file-header-loc :pre "iterate"))))
 
 (defun helm-rg--process-line-numbered-matches-for-bounce ()
   (helm-rg--iterate-match-entries-for-bounce
@@ -1446,7 +1448,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     (helm-rg--with-named-temp-buffer scratch-buf
       (helm-rg--iterate-match-entries-for-bounce
        :file-visitor (lambda (file-header-loc)
-                       file-header-loc
+                       (msg-eval file-header-loc)
                        (cl-destructuring-bind (&key file) file-header-loc
                          (setq is-matching-file-p
                                (if filter-to-file
@@ -1459,7 +1461,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                          (funcall file-header-line-visitor file-header-loc))
                        (helm-rg--down-for-bounce))
        :match-visitor (lambda (match-loc)
-                        match-loc
+                        (msg-eval match-loc)
                         (cl-destructuring-bind (&key file line-num match-results) match-loc
                           (re-search-forward
                            (helm-rg--make-line-number-prefix-regexp-for-bounce line-num))
@@ -1481,7 +1483,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                             (helm-rg--down-for-bounce))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
-                           file-header-loc
+                           (msg-eval file-header-loc :pre "eof")
                            (when is-matching-file-p
                              (funcall finalize-file-buffer-fn file-header-loc scratch-buf))))))
     ;; FIXME: fix the error message here
