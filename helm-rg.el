@@ -1750,6 +1750,7 @@ The buffer has already been advanced to the appropriate line."
   (pcase-exhaustive default-directory-spec
     ('default default-directory)
     ('git-root (helm-rg--get-git-root))
+    ;; TODO: add a test for this function for all values of the directory spec (see #5)!
     ((pred stringp) (helm-rg--check-directory-path default-directory-spec))))
 
 (defun helm-rg--set-case-sensitivity ()
