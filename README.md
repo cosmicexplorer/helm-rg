@@ -58,6 +58,7 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
             - not for file names -- newlines are still removed there
             - would need to use text properties to move by match results then, for everything that uses `helm-rg--apply-matches-with-file-for-bounce` basically
     - [x] visiting the file should go to the appropriate line of the file!
+        - [ ] should flash a highlight of the matched text when visiting the file!
 - [x] color all results in the file in the async action!
     - [x] don't recolor when switching to a different result in the same file!
     - [x] don't color matches whenever file path matches `helm-rg-shallow-highlight-files-regexp`
@@ -74,6 +75,8 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - as an npm package, MELPA package, pandoc writer, *???*
 - [ ] make a keybinding for running `helm-rg` on dired marked files
     - then you could do an `f3` search, bounce to dired, then immediately `helm-rg` on just the file paths from the `f3` search, *which would be sick*
+- [ ] does ripgrep have any options to traverse the fs in (any type of) sorted order?
+    - if so we'll definitely want a `defcustom` on that asap
 
 # License
 
