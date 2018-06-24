@@ -248,59 +248,63 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
          (replace-match "" nil nil)
          (intern))))
 
+(defun helm-rg--apply-tree-fun (mapper tree)
+  (let (intermediate-value-holder)
+    (-tree-map-nodes
+     (helm-rg--_ (setq intermediate-value-holder (funcall mapper _)))
+     (helm-rg--_ intermediate-value-holder)
+     tree)))
+
+(defmacro helm-rg--pcase-tree (tree &rest pcase-exprs)
+  (declare (indent 1))
+  `(helm-rg--apply-tree-fun
+    (helm-rg--_ (pcase _ ,@pcase-exprs))
+    ,tree))
+
 ;;; TODO: add alist/plist matching!
 (cl-defun helm-rg--transform-rx-sexp (sexp &key (group-num-init 1))
-  (let* ((all-bind-vars-mappings nil)
-         (transformed-sexp
-          (-tree-map-nodes
-           (helm-rg--_
-            (and (listp _)
-                 (or (eq (car _) helm-rg--named-group-symbol)
-                     (eq (car _) helm-rg--eval-expr-symbol))))
-           (helm-rg--_
-            (pcase-exhaustive _
-              (`(,(helm-rg-deref-sym helm-rg--eval-expr-symbol) ,eval-expr)
-               (cl-destructuring-bind (&key transformed bind-vars)
-                   (helm-rg--transform-rx-sexp (eval eval-expr t) :group-num-init group-num-init)
-                 (cl-loop
-                  for quoted-var in bind-vars
-                  do (progn
-                       (incf group-num-init)
-                       (when (cl-find quoted-var all-bind-vars-mappings)
-                         (error (concat "'%S' variable name used a second time "
-                                        "in declaration of regexp group '%S'. "
-                                        "previous vars were: %S")
-                                quoted-var sub-rx all-bind-vars-mappings))
-                       ;; We append to the end because dioing push/reverse is unnecessarily complex
-                       ;; here.
-                       (push quoted-var all-bind-vars-mappings)))
-                 transformed))
-              (`(,(helm-rg-deref-sym helm-rg--named-group-symbol)
-                 ,(app (helm-rg--validate-rx-kwarg) binding-var)
-                 . ,rx-forms)
-               ;; We have bound to this variable.
-               (let ((cur-group-num group-num-init))
-                 (push binding-var all-bind-vars-mappings)
-                 (incf group-num-init)
-                 (cl-loop
-                  for sub-rx in rx-forms
-                  collect (cl-destructuring-bind (&key transformed bind-vars)
-                              (helm-rg--transform-rx-sexp sub-rx :group-num-init group-num-init)
-                            (cl-loop
-                             for quoted-var in bind-vars
-                             do (progn
-                                  (incf group-num-init)
-                                  (when (cl-find quoted-var all-bind-vars-mappings)
-                                    (error (concat "'%S' variable name used a second time "
-                                                   "in declaration of regexp group '%S'. "
-                                                   "previous vars were: %S")
-                                           quoted-var sub-rx all-bind-vars-mappings))
-                                  (push quoted-var all-bind-vars-mappings)))
-                           transformed)
-                  into all-transformed-exprs
-                  finally return `(group-n ,cur-group-num ,@all-transformed-exprs))))))
-           sexp)))
-    (list :transformed transformed-sexp :bind-vars (reverse all-bind-vars-mappings))))
+  (let ((all-bind-vars-mappings nil))
+    (--> (helm-rg--pcase-tree sexp
+           (`(,(helm-rg-deref-sym helm-rg--eval-expr-symbol) ,eval-expr)
+            (cl-destructuring-bind (&key transformed bind-vars)
+                (helm-rg--transform-rx-sexp (eval eval-expr t) :group-num-init group-num-init)
+              (cl-loop
+               for quoted-var in bind-vars
+               do (progn
+                    (incf group-num-init)
+                    (when (cl-find quoted-var all-bind-vars-mappings)
+                      (error (concat "'%S' variable name used a second time "
+                                     "in declaration of regexp group '%S'. "
+                                     "previous vars were: %S")
+                             quoted-var sub-rx all-bind-vars-mappings))
+                    (push quoted-var all-bind-vars-mappings)))
+              transformed))
+           (`(,(helm-rg-deref-sym helm-rg--named-group-symbol)
+              ,(app (helm-rg--validate-rx-kwarg) binding-var)
+              . ,rx-forms)
+            ;; We have bound to this variable -- save the current group number and push this
+            ;; variable onto the list of binding variables.
+            (let ((cur-group-num group-num-init))
+              (push binding-var all-bind-vars-mappings)
+              (incf group-num-init)
+              (cl-loop
+               for sub-rx in rx-forms
+               collect (cl-destructuring-bind (&key transformed bind-vars)
+                           (helm-rg--transform-rx-sexp sub-rx :group-num-init group-num-init)
+                         (cl-loop
+                          for quoted-var in bind-vars
+                          do (progn
+                               (incf group-num-init)
+                               (when (cl-find quoted-var all-bind-vars-mappings)
+                                 (error (concat "'%S' variable name used a second time "
+                                                "in declaration of regexp group '%S'. "
+                                                "previous vars were: %S")
+                                        quoted-var sub-rx all-bind-vars-mappings))
+                               (push quoted-var all-bind-vars-mappings)))
+                         transformed)
+               into all-transformed-exprs
+               finally return `(group-n ,cur-group-num ,@all-transformed-exprs)))))
+         (list :transformed it :bind-vars (reverse all-bind-vars-mappings)))))
 
 (pcase-defmacro helm-rg-rx (rx-sexp)
   (cl-destructuring-bind (&key transformed bind-vars)
