@@ -204,14 +204,13 @@ unquoted name of a variable containing an alist."
      ,@body))
 
 (defmacro helm-rg--_ (expr)
+  "Replace all instances of `_' in EXPR with an anonymous argument.
+
+Return a lambda accepting that argument."
+  (declare (debug (sexp body)))
   (helm-rg--with-gensyms (arg)
     `(lambda (,arg)
-       ,(cl-subst arg '_ (macroexpand-all expr) :test #'eq))))
-
-(defmacro helm-rg--flip (fun arg1 arg2)
-  "Implementation is the same as `pcase--flip'."
-  (declare (debug (sexp body)))
-  `(,fun ,arg2 ,arg1))
+       ,(cl-subst arg '_ expr :test #'eq))))
 
 (cl-defun helm-rg--join-conditions (conditions &key (joiner 'or))
   "If CONDITIONS has one element, return it, otherwise wrap them with JOINER.
@@ -220,8 +219,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   (pcase-exhaustive conditions
     (`nil (error "nil conditions with joiner '%S'" joiner))
     (`(,single-sexp) single-sexp)
-    (x
-     `(,joiner ,@x))))
+    (x `(,joiner ,@x))))
 
 (pcase-defmacro helm-rg-cl-typep (&rest types)
   "Matches when the subject is any of TYPES, using `cl-typep'."
@@ -232,11 +230,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 
 (pcase-defmacro helm-rg-deref-sym (sym)
   "???"
-  (->> (eval sym) (list 'quote)))
-
-(defconst helm-rg--named-group-symbol 'named-group)
-
-(defconst helm-rg--eval-expr-symbol 'eval)
+  (list 'quote (eval sym)))
 
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (let ((sym-str (symbol-name keyword-sym-for-binding)))
@@ -263,6 +257,10 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
     (helm-rg--_ (pcase _ ,@pcase-exprs))
     ,tree))
 
+;; FIXME: remove the unnecessary uses of `helm-rg-deref-sym' in this method! It's more
+;; clear when the literal symbols are used in this particular case.
+(defconst helm-rg--named-group-symbol 'named-group)
+(defconst helm-rg--eval-expr-symbol 'eval)
 ;;; TODO: add alist/plist matching!
 (cl-defun helm-rg--transform-rx-sexp (sexp &key (group-num-init 1))
   (let ((all-bind-vars-mappings nil))
@@ -279,9 +277,9 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                     (incf group-num-init)
                     (when (cl-find quoted-var all-bind-vars-mappings)
                       (error (concat "'%S' variable name used a second time "
-                                     "in declaration of regexp group '%S'. "
+                                     "in evaluation of form '%S'. "
                                      "previous vars were: %S")
-                             quoted-var sub-rx all-bind-vars-mappings))
+                             quoted-var eval-expr all-bind-vars-mappings))
                     (push quoted-var all-bind-vars-mappings)))
               transformed))
            ;; `(named-group :var-name . ,rx-forms) => create an explicitly-numbered regexp group
@@ -330,8 +328,6 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                              for match-index upfrom 1
                              collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
                 :joiner 'and))))))
-
-;; (pcase-defmacro )
 
 
 ;; Public error types
