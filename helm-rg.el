@@ -331,8 +331,6 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                              collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
                 :joiner 'and))))))
 
-(pcase-defmacro helm-rg-looking-at ())
-
 ;; (pcase-defmacro )
 
 
@@ -1295,15 +1293,13 @@ Merges stdout and stderr, and trims whitespace from the result."
                    ,propertized-line)))
 
 (defun helm-rg--process-transition (cur-file line)
-  ;; TODO: document this function!
-  ;; FIXME: some pcase extensions (?) for regex matching could make this method much more clear.
   (pcase-exhaustive line
+    ;; When we see an empty line, we clear all the state.
     ((rx (: bos eos))
-     ;; When we see an empty line, we clear all the state.
      (list :file-path nil))
+    ;; When we see a line with a number and text, we must be collecting match lines from a
+    ;; particular file right now. Parse the line and add "jump" information as text properties.
     ((helm-rg-rx (eval helm-rg--numbered-text-line-rx-expr))
-     ;; When we see a line with a number and text, we must be collecting match lines from a
-     ;; particular file right now. Parse the line and add "jump" information as text properties.
      (cl-check-type cur-file string)
      (cl-destructuring-bind (&key propertized-line match-regions)
          (helm-rg--parse-propertize-match-regions-from-match-line content)
@@ -1319,10 +1315,12 @@ Merges stdout and stderr, and trims whitespace from the result."
                (propertize prefixed-line helm-rg--jump-location-text-property jump-to)))
          (list :file-path cur-file
                :line-content output-line))))
+    ;; If we see a line with just a filename, we must have just finished the results from another
+    ;; file. We update the state to the file parsed from this line, but we may not insert anything
+    ;; into the output depending on the user's customizations.
     ((helm-rg-rx (eval helm-rg--output-new-file-line-rx-expr))
-     ;; If we see a line with just a filename, we must have just finished the results from another
-     ;; file. We update the state to the file parsed from this line, but we may not insert anything
-     ;; into the output depending on the user's customizations.
+     ;; FIXME: why does this fail?
+     ;; (cl-check-type cur-file null)
      (let* ((whole-line (helm-rg--make-face 'helm-rg-file-match-face whole-line))
             (file-path (helm-rg--make-face 'helm-rg-file-match-face file-path))
             (jump-to (list :file file-path))
