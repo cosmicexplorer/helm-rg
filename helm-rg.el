@@ -249,6 +249,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
          (intern))))
 
 (defun helm-rg--apply-tree-fun (mapper tree)
+  "???"
   (let (intermediate-value-holder)
     (-tree-map-nodes
      (helm-rg--_ (setq intermediate-value-holder (funcall mapper _)))
@@ -256,6 +257,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
      tree)))
 
 (defmacro helm-rg--pcase-tree (tree &rest pcase-exprs)
+  "???"
   (declare (indent 1))
   `(helm-rg--apply-tree-fun
     (helm-rg--_ (pcase _ ,@pcase-exprs))
@@ -265,6 +267,9 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 (cl-defun helm-rg--transform-rx-sexp (sexp &key (group-num-init 1))
   (let ((all-bind-vars-mappings nil))
     (--> (helm-rg--pcase-tree sexp
+           ;; `(eval ,eval-expr) => evaluate the expression!
+           ;; NB: this occurs at macro-expansion time, like the equivalent `rx' pcase macro, which
+           ;; is before any surrounding let-bindings occur!)
            (`(,(helm-rg-deref-sym helm-rg--eval-expr-symbol) ,eval-expr)
             (cl-destructuring-bind (&key transformed bind-vars)
                 (helm-rg--transform-rx-sexp (eval eval-expr t) :group-num-init group-num-init)
@@ -279,6 +284,9 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                              quoted-var sub-rx all-bind-vars-mappings))
                     (push quoted-var all-bind-vars-mappings)))
               transformed))
+           ;; `(named-group :var-name . ,rx-forms) => create an explicitly-numbered regexp group
+           ;; and, if the resulting regexp matches, bind the match string for that numbered group to
+           ;; var-name (without the initial ":", which is required)!
            (`(,(helm-rg-deref-sym helm-rg--named-group-symbol)
               ,(app (helm-rg--validate-rx-kwarg) binding-var)
               . ,rx-forms)
@@ -306,17 +314,26 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                finally return `(group-n ,cur-group-num ,@all-transformed-exprs)))))
          (list :transformed it :bind-vars (reverse all-bind-vars-mappings)))))
 
-(pcase-defmacro helm-rg-rx (rx-sexp)
-  (cl-destructuring-bind (&key transformed bind-vars)
-      (helm-rg--transform-rx-sexp rx-sexp)
-    (helm-rg--with-gensyms (str-sym)
-      `(and ,str-sym
-            ,(helm-rg--join-conditions
-              `((rx ,transformed)
-                ,@(cl-loop for symbol-to-bind in bind-vars
-                           for match-index upfrom 1
-                           collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
-              :joiner 'and)))))
+(pcase-defmacro helm-rg-rx (&rest rx-sexps)
+  (let ((transformed-rx-sexp
+         (-> rx-sexps
+             ;; We need to join the sexps so that we can keep the regex group numbers uniformly
+             ;; increasing across the consituent forms of the generated regexp.
+             (helm-rg--join-conditions :joiner 'and)
+             (helm-rg--transform-rx-sexp))))
+    (cl-destructuring-bind (&key transformed bind-vars) transformed-rx-sexp
+      (helm-rg--with-gensyms (str-sym)
+        `(and ,str-sym
+              ,(helm-rg--join-conditions
+                `((rx ,transformed)
+                  ,@(cl-loop for symbol-to-bind in bind-vars
+                             for match-index upfrom 1
+                             collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
+                :joiner 'and))))))
+
+(pcase-defmacro helm-rg-looking-at ())
+
+;; (pcase-defmacro )
 
 
 ;; Public error types
@@ -1405,7 +1422,7 @@ Merges stdout and stderr, and trims whitespace from the result."
       ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
       ;; matches)!
       ;; We are looking at a line number.
-      (cl-assert (looking-at (rx-to-string `(: bol (group ,(number-to-string line-num)) ":"))))
+      (cl-assert (looking-at (rx-to-string `(: bol (group-n 1 ,(number-to-string line-num)) ":"))))
       ;; Make the propertized line number text read-only.
       (let* ((matched-number-str (match-string 1))
              (matched-num (string-to-number matched-number-str)))
