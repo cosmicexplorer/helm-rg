@@ -419,10 +419,40 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                 (-map #'helm-rg--parse-&key-spec)
                 (helm-rg--read-&key-specs)))))
 
+(pcase-defmacro helm-rg-&key-complete (&rest all-key-specs)
+  "`helm-rg-&key', but there must be no other keys, and all the keys in ALL-KEY-SPECS must exist."
+  `(helm-rg-&key :exhaustive :required ,@all-key-specs))
+
+(defun helm-rg--parse-format-spec (format-spec)
+  "Convert a list of strings and other things into some result for `helm-rg--make-formatter'."
+  (pcase-exhaustive format-spec
+    ((and (helm-rg-cl-typep string) x)
+     (helm-rg-construct-plist (:component x) (:arguments nil)))
+    ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol) sym)
+     (helm-rg-construct-plist (:component " %S ") (:arguments `(,sym)) (:with-expr nil)))
+    (`(,expr . ,(helm-rg-&key (fmt " %S ") with-expr))
+     (helm-rg-construct-plist (:component fmt) (:arguments `(,expr)) with-expr))))
+
+;; (defun helm-rg--make-formatter (all-format-specs)
+;;   (list :kwarg-decls '(a) :fn (lambda (&rest kwargs)
+;;                                 (cl-destructuring-bind (&key a) kwargs
+;;                                  a))))
+
+;; (defmacro helm-rg--format (format-spec &rest kwargs)
+;;   (--> format-spec
+;;        (helm-rg--make-formatter it)
+;;        (cl-destructuring-bind (&key kwarg-decls fn) it
+;;          (apply fn kwarg-decls))))
+
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (let ((sym-str (symbol-name keyword-sym-for-binding)))
     (unless (string-match (rx-to-string helm-rg--keyword-symbol-rx-expr)
                           sym-str)
+      ;; (error (helm-rg--format
+      ;;         ("symbol" keyword-sym-for-binding
+      ;;          "must be a keyword arg"
+      ;;          (keyword-sym-for-binding :fmt "(e.g. :%S)")
+      ;;          ".")))
       ;; TODO: do named format string args (like rx though)!
       (error "symbol '%S' must be a keyword arg (e.g. ':%S')."
              keyword-sym-for-binding keyword-sym-for-binding))
@@ -1486,7 +1516,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     ;; When we see a line with a number and text, we must be collecting match lines from a
     ;; particular file right now. Parse the line and add "jump" information as text properties.
     ((and (helm-rg-rx (eval helm-rg--numbered-text-line-rx-expr))
-          (let (helm-rg-&key :exhaustive :required propertized-line match-regions)
+          (let (helm-rg-&key-complete propertized-line match-regions)
             (helm-rg--parse-propertize-match-regions-from-match-line content)))
      (cl-check-type cur-file string)
      (let* ((prefixed-line (helm-rg--join-output-line
