@@ -280,16 +280,16 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   (pcase-exhaustive parsed-optional-spec-list
     (`(,cur . ,rest)
      `(or (and `nil
-               ,@(-flatten-n
-                  1
-                  (funcall
-                   #'append
-                   (--map (cl-destructuring-bind (&key upat initform svar) it
-                            `((let ,upat ,initform)
-                              ,@(and svar `((let ,svar nil)))))
-                          (cons cur rest)))))
+               ,@(->> (cons cur rest)
+                      (--map (cl-destructuring-bind (&key upat initform svar) it
+                               `(,@(and svar `((let ,svar nil)))
+                                 (let ,upat ,initform))))
+                      (funcall #'append)
+                      (-flatten-n 1)))
           ,(cl-destructuring-bind (&key upat initform svar) cur
              (helm-rg--join-conditions
+              ;; NB: SVAR is bound before INITFORM is evaluated, which means you can refer to SVAR
+              ;; within INITFORM (and more importantly, within UPAT)!
               `(,@(and svar `((let ,svar t)))
                 ,(list '\` (cons (list '\, upat)
                                  (and rest
@@ -317,8 +317,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                 (let svar nil))
            (and (helm-rg-&optional initform svar)
                 (let required nil))))
-     (helm-rg-construct-plist
-      kw-sym upat required initform svar))
+     (helm-rg-construct-plist kw-sym upat required initform svar))
     ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol)
           upat)
      (helm-rg-construct-plist
@@ -394,20 +393,25 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                             ,(helm-rg--join-conditions
                               `(,@(unless required
                                     `((and `nil
-                                           (let ,upat ,initform)
-                                           ,@(and svar `((let ,svar nil))))))
+                                           ,@(and svar `((let ,svar nil)))
+                                           (let ,upat ,initform))))
+                                ;; NB: SVAR is bound before INITFORM is evaluated, which means you
+                                ;; can refer to SVAR within INITFORM (and more importantly, within
+                                ;; UPAT)!
                                 ,(helm-rg--join-conditions
-                                  `(,(list '\` (list kw-sym
+                                  `(,@(and svar `((let ,svar t)))
+                                    ,(list '\` (list kw-sym
                                                      (list '\, upat)
-                                                     '\, (cl-gensym)))
-                                    ,@(and svar `((let ,svar t))))
+                                                     ;; We ignore the rest, but we need a throwaway
+                                                     ;; symbol here.
+                                                     '\, (cl-gensym))))
                                   :joiner 'and))
                               :joiner 'or))))
                    :joiner 'and)
                  ,@(and rest (list (helm-rg--read-&key-specs rest))))
                :joiner 'and)))))
       (if exhaustive
-          (helm-rg--with-gensyms (exp-plist-keys all-keys-val)
+          (helm-rg--with-gensyms (exp-plist-keys)
             `(and
               ;; NB: we do not attempt to parse the `pcase' subject as a plist unless `:exhaustive'
               ;; is provided -- this is intentional.
@@ -434,13 +438,28 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   "Convert a list of strings and other things into some result for `helm-rg--make-formatter'."
   (pcase-exhaustive format-spec
     ((and (helm-rg-cl-typep string) x)
-     (helm-rg-construct-plist (:component x) (:arguments nil)))
+     (helm-rg-construct-plist
+      (:component x) (:exprs nil) (:arguments nil) (:with-expr nil)))
     ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol) sym)
-     (helm-rg-construct-plist (:component " %S ") (:arguments `(,sym)) (:with-expr nil)))
-    ((and (helm-rg-cl-typep keyword) kw-sym)
-     (helm-rg-construct-plist (:component " %S ") (:arguments `())))
-    (`(,expr . ,(helm-rg-&key (fmt " %S ") with-expr))
-     (helm-rg-construct-plist (:component fmt) (:arguments `(,expr)) with-expr))))
+     (helm-rg-construct-plist
+      (:component " %S ") (:exprs `(,sym)) (:arguments nil) (:with-expr nil)))
+    ((and (helm-rg-cl-typep keyword)
+          kw-sym
+          (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
+               non-kw-sym)
+          (let arguments `(,kw-sym))
+          (let exprs `(,non-kw-sym)))
+     (helm-rg-construct-plist (:component " %S ") exprs arguments (:with-expr nil)))
+    (`(,(and (or (and (helm-rg-cl-typep keyword)
+                      kw-sym
+                      (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
+                           expr)
+                      (let arguments `(,kw-sym)))
+                 (and expr
+                      (let arguments nil)))
+             (let exprs `(,expr)))
+       . ,(helm-rg-&key (fmt " %S ") with-expr))
+     (helm-rg-construct-plist (:component fmt) exprs arguments with-expr))))
 
 ;; (defun helm-rg--make-formatter (all-format-specs)
 ;;   (list :kwarg-decls '(a) :fn (lambda (&rest kwargs)
