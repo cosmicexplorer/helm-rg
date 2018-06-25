@@ -232,20 +232,6 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   "???"
   (list 'quote (eval sym)))
 
-(defun helm-rg--parse-format-spec (format-spec)
-  "Convert a list of strings and other things into some result for `helm-rg--make-formatter'.")
-
-(defun helm-rg--make-formatter (format-spec)
-  (list :kwarg-decls '(a) :fn (lambda (&rest kwargs)
-                                (cl-destructuring-bind (&key a) kwargs
-                                 a))))
-
-(defmacro helm-rg--format (format-spec &rest kwargs)
-  (--> format-spec
-       (helm-rg--make-formatter it)
-       (cl-destructuring-bind (&key kwarg-decls fn) it
-         (apply fn kwarg-decls))))
-
 (defconst helm-rg--keyword-symbol-rx-expr `(: bos ":"))
 
 (cl-deftype helm-rg-non-keyword-symbol ()
@@ -432,21 +418,6 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
     (specs (->> specs
                 (-map #'helm-rg--parse-&key-spec)
                 (helm-rg--read-&key-specs)))))
-
-(pcase-defmacro helm-rg-&key-required (&rest all-key-specs)
-  (->> all-key-specs
-       (-map #'helm-rg--parse-&key-spec)
-       (--map (cl-destructuring-bind (&key kw-sym upat required initform svar) it
-                ;; TODO: better error messaging here!
-                (cl-assert (not initform))
-                (cl-assert (not svar))
-                (cl-assert (not required))
-                (helm-rg-construct-plist
-                 kw-sym upat
-                 (:required t)
-                 (:initform nil)
-                 (:svar nil))))
-       (helm-rg--read-&key-specs)))
 
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (let ((sym-str (symbol-name keyword-sym-for-binding)))
@@ -1515,7 +1486,7 @@ Merges stdout and stderr, and trims whitespace from the result."
     ;; When we see a line with a number and text, we must be collecting match lines from a
     ;; particular file right now. Parse the line and add "jump" information as text properties.
     ((and (helm-rg-rx (eval helm-rg--numbered-text-line-rx-expr))
-          (let (helm-rg-&key-required propertized-line match-regions)
+          (let (helm-rg-&key :exhaustive :required propertized-line match-regions)
             (helm-rg--parse-propertize-match-regions-from-match-line content)))
      (cl-check-type cur-file string)
      (let* ((prefixed-line (helm-rg--join-output-line
