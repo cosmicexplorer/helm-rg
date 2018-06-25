@@ -238,9 +238,16 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   `(and symbol
         (not keyword)))
 
-(defun helm-rg--make-keyword-from-non-keyword-sym (sym)
-  (cl-check-type sym helm-rg-non-keyword-symbol)
-  (->> sym
+(defun helm-rg--make-non-keyword-sym-from-keyword-sym (kw-sym)
+  (cl-check-type kw-sym keyword)
+  (->> kw-sym
+       (symbol-name)
+       (replace-regexp-in-string (rx-to-string helm-rg--keyword-symbol-rx-expr) "")
+       (intern)))
+
+(defun helm-rg--make-keyword-from-non-keyword-sym (non-kw-sym)
+  (cl-check-type non-kw-sym helm-rg-non-keyword-symbol)
+  (->> non-kw-sym
        (symbol-name)
        (format ":%s")
        (intern)))
@@ -430,6 +437,8 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
      (helm-rg-construct-plist (:component x) (:arguments nil)))
     ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol) sym)
      (helm-rg-construct-plist (:component " %S ") (:arguments `(,sym)) (:with-expr nil)))
+    ((and (helm-rg-cl-typep keyword) kw-sym)
+     (helm-rg-construct-plist (:component " %S ") (:arguments `())))
     (`(,expr . ,(helm-rg-&key (fmt " %S ") with-expr))
      (helm-rg-construct-plist (:component fmt) (:arguments `(,expr)) with-expr))))
 
@@ -445,20 +454,23 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 ;;          (apply fn kwarg-decls))))
 
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
-  (let ((sym-str (symbol-name keyword-sym-for-binding)))
-    (unless (string-match (rx-to-string helm-rg--keyword-symbol-rx-expr)
-                          sym-str)
-      ;; (error (helm-rg--format
-      ;;         ("symbol" keyword-sym-for-binding
-      ;;          "must be a keyword arg"
-      ;;          (keyword-sym-for-binding :fmt "(e.g. :%S)")
-      ;;          ".")))
-      ;; TODO: do named format string args (like rx though)!
-      (error "symbol '%S' must be a keyword arg (e.g. ':%S')."
-             keyword-sym-for-binding keyword-sym-for-binding))
-    (->> sym-str
-         (replace-match "" nil nil)
-         (intern))))
+  (pcase-exhaustive keyword-sym-for-binding
+    ((and (helm-rg-cl-typep keyword)
+          (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
+               non-kw-sym))
+     non-kw-sym)
+    ((and (helm-rg-cl-typep symbol)
+          non-kw-sym
+          (app (helm-rg--make-keyword-from-non-keyword-sym)
+               kw-sym))
+     ;; (error (helm-rg--format
+     ;;         ("symbol" keyword-sym-for-binding
+     ;;          "must be a keyword arg"
+     ;;          (keyword-sym-for-binding :fmt "(e.g. :%S)")
+     ;;          ".")))
+     ;; TODO: do named format string args (like rx though)!
+     (error "symbol '%S' must be a keyword arg (e.g. ':%S')."
+            non-kw-sym kw-sym))))
 
 (defun helm-rg--apply-tree-fun (mapper tree)
   "???"
