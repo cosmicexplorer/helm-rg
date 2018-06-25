@@ -232,9 +232,89 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   "???"
   (list 'quote (eval sym)))
 
+(defun helm-rg--parse-format-spec (format-spec)
+  "Convert a list of strings and other things into some result for `helm-rg--make-formatter'.")
+
+(defun helm-rg--make-formatter (format-spec)
+  (list :kwarg-decls '(a) :fn (lambda (&rest kwargs)
+                                (cl-destructuring-bind (&key a) kwargs
+                                 a))))
+
+(defmacro helm-rg--format (format-spec &rest kwargs)
+  (--> format-spec
+       (helm-rg--make-formatter it)
+       (cl-destructuring-bind (&key kwarg-decls fn) it
+         (apply fn kwarg-decls))))
+
+(defconst helm-rg--keyword-symbol-rx-expr `(: bos ":"))
+
+(cl-deftype helm-rg-non-keyword-symbol ()
+  `(and symbol
+        (not keyword)))
+
+(defun helm-rg--parse-plist-spec (plist-spec)
+  (pcase-exhaustive plist-spec
+    ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol)
+          sym)
+     `(,(->> sym
+             (symbol-name)
+             (format ":%s")
+             (intern))
+       ,sym))
+    (`(,(and (helm-rg-cl-typep keyword) kw-sym)
+       ,value)
+     `(,kw-sym ,value))))
+
+(defmacro helm-rg-construct-plist (&rest plist-specs)
+  (->> plist-specs
+       (-map #'helm-rg--parse-plist-spec)
+       (apply #'append '(list))))
+
+(defun helm-rg--parse-&optional-spec (optional-spec)
+  (pcase-exhaustive optional-spec
+    (`(,upat ,initform ,svar)
+     (helm-rg-construct-plist upat initform svar))
+    (`(,upat ,initform)
+     (helm-rg-construct-plist upat initform))
+    ((or `(,upat) upat)
+     (helm-rg-construct-plist upat))))
+
+(defun helm-rg--read-&optional-specs (parsed-optional-spec-list)
+  (pcase-exhaustive parsed-optional-spec-list
+    (`(,cur . ,rest)
+     `(or (and `nil
+               ,@(-flatten-n
+                  1
+                  (funcall
+                   #'append
+                   (--map (cl-destructuring-bind (&key upat initform svar) it
+                            `((let ,upat ,initform)
+                              ,@(and svar `((let ,svar nil)))))
+                          (cons cur rest)))))
+          ,(cl-destructuring-bind (&key upat initform svar) cur
+             (helm-rg--join-conditions
+              `(,@(and svar `((let ,svar t)))
+                ,(list '\` (cons (list '\, upat)
+                                 (and rest
+                                      (list '\, (helm-rg--read-&optional-specs rest))))))
+              :joiner 'and))))))
+
+(pcase-defmacro helm-rg-&optional (&rest all-optional-specs)
+  (->> all-optional-specs
+       (-map #'helm-rg--parse-&optional-spec)
+       (helm-rg--read-&optional-specs)))
+
+;; (defun helm-rg--parse-&key-spec (key-spec)
+;;   (pcase-exhaustive key-spec
+;;     (`((,keyword upat)))))
+
+;; (pcase-defmacro helm-rg-&key (key-spec)
+;;   )
+
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (let ((sym-str (symbol-name keyword-sym-for-binding)))
-    (unless (string-match (rx bos ":") sym-str)
+    (unless (string-match (rx-to-string helm-rg--keyword-symbol-rx-expr)
+                          sym-str)
       ;; TODO: do named format string args (like rx though)!
       (error "symbol '%S' must be a keyword arg (e.g. ':%S')."
              keyword-sym-for-binding keyword-sym-for-binding))
@@ -257,8 +337,9 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
     (helm-rg--_ (pcase _ ,@pcase-exprs))
     ,tree))
 
-;; FIXME: remove the unnecessary uses of `helm-rg-deref-sym' in this method! It's more
-;; clear when the literal symbols are used in this particular case.
+;;; FIXME: have some way to get the indices of each bound var for things like match-data etc!!! cmon
+;;; FIXME: remove the unnecessary uses of `helm-rg-deref-sym' in this method! It's more clear when
+;;; the literal symbols are used (in this particular case).
 (defconst helm-rg--named-group-symbol 'named-group)
 (defconst helm-rg--eval-expr-symbol 'eval)
 ;;; TODO: add alist/plist matching!
@@ -1275,8 +1356,9 @@ Merges stdout and stderr, and trims whitespace from the result."
    concat (substring match-line match-end match-beg) into cur-match-str
    for match-end = (helm-rg--first-match-start-ripgrep-output match-beg match-line t)
    do (setq line-char-index match-end)
-   concat (helm-rg--make-face
-           'helm-rg-match-text-face (substring match-line match-beg match-end))
+   concat (--> match-line
+               (substring it match-beg match-end)
+               (helm-rg--make-face 'helm-rg-match-text-face it))
    into cur-match-str
    collect (list :beg match-beg :end match-end) into match-regions))
 
