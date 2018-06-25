@@ -412,6 +412,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                  ,@(and rest (list (helm-rg--read-&key-specs rest))))
                :joiner 'and)))))
       (if exhaustive
+          ;; FIXME: should be using a "once-only" type macro here!
           (helm-rg--with-gensyms (exp-plist-keys)
             `(and
               ;; NB: we do not attempt to parse the `pcase' subject as a plist unless `:exhaustive'
