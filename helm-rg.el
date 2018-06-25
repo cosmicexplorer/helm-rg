@@ -367,6 +367,21 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
        (-map #'helm-rg--parse-&key-spec)
        (helm-rg--read-&key-specs)))
 
+(pcase-defmacro helm-rg-&key-required (&rest all-key-specs)
+  (->> all-key-specs
+       (-map #'helm-rg--parse-&key-spec)
+       (--map (cl-destructuring-bind (&key kw-sym upat required initform svar) it
+                ;; TODO: better error messaging here!
+                (cl-assert (not initform))
+                (cl-assert (not svar))
+                (cl-assert (not required))
+                (helm-rg-construct-plist
+                 kw-sym upat
+                 (:required t)
+                 (:initform nil)
+                 (:svar nil))))
+       (helm-rg--read-&key-specs)))
+
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (let ((sym-str (symbol-name keyword-sym-for-binding)))
     (unless (string-match (rx-to-string helm-rg--keyword-symbol-rx-expr)
@@ -1433,22 +1448,22 @@ Merges stdout and stderr, and trims whitespace from the result."
      (list :file-path nil))
     ;; When we see a line with a number and text, we must be collecting match lines from a
     ;; particular file right now. Parse the line and add "jump" information as text properties.
-    ((helm-rg-rx (eval helm-rg--numbered-text-line-rx-expr))
+    ((and (helm-rg-rx (eval helm-rg--numbered-text-line-rx-expr))
+          (let (helm-rg-&key-required propertized-line match-regions)
+            (helm-rg--parse-propertize-match-regions-from-match-line content)))
      (cl-check-type cur-file string)
-     (cl-destructuring-bind (&key propertized-line match-regions)
-         (helm-rg--parse-propertize-match-regions-from-match-line content)
-       (let* ((prefixed-line (helm-rg--join-output-line
-                              :cur-file (and helm-rg-include-file-on-every-match-line cur-file)
-                              :line-num-str line-num-str
-                              :propertized-line propertized-line))
-              (line-num (string-to-number line-num-str))
-              (jump-to (list :file cur-file
-                             :line-num line-num
-                             :match-results match-regions))
-              (output-line
-               (propertize prefixed-line helm-rg--jump-location-text-property jump-to)))
-         (list :file-path cur-file
-               :line-content output-line))))
+     (let* ((prefixed-line (helm-rg--join-output-line
+                            :cur-file (and helm-rg-include-file-on-every-match-line cur-file)
+                            :line-num-str line-num-str
+                            :propertized-line propertized-line))
+            (line-num (string-to-number line-num-str))
+            (jump-to (list :file cur-file
+                           :line-num line-num
+                           :match-results match-regions))
+            (output-line
+             (propertize prefixed-line helm-rg--jump-location-text-property jump-to)))
+       (list :file-path cur-file
+             :line-content output-line)))
     ;; If we see a line with just a filename, we must have just finished the results from another
     ;; file. We update the state to the file parsed from this line, but we may not insert anything
     ;; into the output depending on the user's customizations.
