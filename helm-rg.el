@@ -402,9 +402,13 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                                   `(,@(and svar `((let ,svar t)))
                                     ,(list '\` (list kw-sym
                                                      (list '\, upat)
-                                                     ;; We ignore the rest, but we need a throwaway
-                                                     ;; symbol here.
-                                                     '\, (cl-gensym))))
+                                                     ;; This is the result of `plist-member', from
+                                                     ;; the `helm-rg--flipped-plist-member' above,
+                                                     ;; so there may be more to the list, but we
+                                                     ;; don't need it, so we use the placeholder `_'
+                                                     ;; which is unbound. This all becomes:
+                                                     ;; `(,kw-sym ,upat . ,_)
+                                                     '\, '_)))
                                   :joiner 'and))
                               :joiner 'or))))
                    :joiner 'and)
