@@ -443,38 +443,62 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   (pcase-exhaustive format-spec
     ((and (helm-rg-cl-typep string) x)
      (helm-rg-construct-plist
-      (:component x) (:exprs nil) (:arguments nil) (:with-expr nil)))
+      (:fmt x) (:expr nil) (:argument nil)))
     ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol) sym)
-     (helm-rg-construct-plist
-      (:component " %S ") (:exprs `(,sym)) (:arguments nil) (:with-expr nil)))
+     (helm-rg-construct-plist (:fmt "%s") (:expr sym) (:argument nil)))
     ((and (helm-rg-cl-typep keyword)
-          kw-sym
           (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
-               non-kw-sym)
-          (let arguments `(,kw-sym))
-          (let exprs `(,non-kw-sym)))
-     (helm-rg-construct-plist (:component " %S ") exprs arguments (:with-expr nil)))
-    (`(,(and (or (and (helm-rg-cl-typep keyword)
-                      kw-sym
-                      (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
-                           expr)
-                      (let arguments `(,kw-sym)))
-                 (and expr
-                      (let arguments nil)))
-             (let exprs `(,expr)))
-       . ,(helm-rg-&key (fmt " %S ") with-expr))
-     (helm-rg-construct-plist (:component fmt) exprs arguments with-expr))))
+               non-kw-sym))
+     (helm-rg-construct-plist (:fmt "%s") (:expr non-kw-sym) (:argument non-kw-sym)))
+    (`(,(or (and (helm-rg-cl-typep keyword)
+                 (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
+                      non-kw-sym)
+                 (let argument non-kw-sym)
+                 (let expr non-kw-sym))
+            (and expr (let argument nil)))
+       . ,(helm-rg-&key (fmt "%s")))
+     (helm-rg-construct-plist fmt expr argument))))
 
-;; (defun helm-rg--make-formatter (all-format-specs)
-;;   (list :kwarg-decls '(a) :fn (lambda (&rest kwargs)
-;;                                 (cl-destructuring-bind (&key a) kwargs
-;;                                  a))))
+(defun helm-rg--read-format-specs (format-spec-list)
+  (cl-loop
+   with fmts = nil
+   with exprs = nil
+   with arguments = nil
+   for parsed-spec in (-map #'helm-rg--parse-format-spec format-spec-list)
+   ;; TODO: turn this into an unzip-plists method/macro or something!
+   do (cl-destructuring-bind (&key fmt expr argument) parsed-spec
+        (push fmt fmts)
+        (when expr (push expr exprs))
+        (when argument (push argument arguments)))
+   finally return (helm-rg-construct-plist
+                   (:fmts (reverse fmts))
+                   (:exprs (reverse exprs))
+                   (:arguments (-> arguments (-uniq) (reverse))))))
 
-;; (defmacro helm-rg--format (format-spec &rest kwargs)
-;;   (--> format-spec
-;;        (helm-rg--make-formatter it)
-;;        (cl-destructuring-bind (&key kwarg-decls fn) it
-;;          (apply fn kwarg-decls))))
+(cl-defmacro helm-rg-format ((format-specs &rest kwargs) &key (sep " "))
+  (cl-destructuring-bind (&key fmts exprs arguments)
+      (helm-rg--read-format-specs format-specs)
+    (cond
+     (arguments
+      `(cl-destructuring-bind (&key ,@arguments) ',kwargs
+         ;; TODO: a "once-only" macro that's just sugar for gensyms
+         (format (mapconcat #'identity (list ,@fmts) ,sep) ,@exprs)))
+     (kwargs
+      (error "no arguments were declared, but keyword arguments %S were provided" kwargs))
+     (t
+      `(format (mapconcat #'identity (list ,@fmts) ,sep) ,@exprs)))))
+
+(cl-defmacro helm-rg-make-formatter (format-specs &key (sep " "))
+  (cl-destructuring-bind (&key fmts exprs arguments)
+      (helm-rg--read-format-specs format-specs)
+    (unless arguments
+      (error "no arguments were declared in the specs %S" format-specs))
+    ;; TODO: make a macro that can create a lambda with visible keyword arguments (a "cl-lambda"
+    ;; type thing)
+    (helm-rg--with-gensyms (args)
+      `(lambda (&rest ,args)
+         (cl-destructuring-bind (&key ,@arguments) ,args
+           (format (mapconcat #'identity (list ,@fmts) ,sep) ,@exprs))))))
 
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (pcase-exhaustive keyword-sym-for-binding
@@ -486,14 +510,9 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
           non-kw-sym
           (app (helm-rg--make-keyword-from-non-keyword-sym)
                kw-sym))
-     ;; (error (helm-rg--format
-     ;;         ("symbol" keyword-sym-for-binding
-     ;;          "must be a keyword arg"
-     ;;          (keyword-sym-for-binding :fmt "(e.g. :%S)")
-     ;;          ".")))
-     ;; TODO: do named format string args (like rx though)!
-     (error "symbol '%S' must be a keyword arg (e.g. ':%S')."
-            non-kw-sym kw-sym))))
+     (error (helm-rg-format
+                (("symbol" (non-kw-sym :fmt "%S")
+                  "must be a keyword arg" (kw-sym :fmt "(e.g. %S)."))))))))
 
 (defun helm-rg--apply-tree-fun (mapper tree)
   "???"
