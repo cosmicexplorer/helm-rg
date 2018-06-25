@@ -310,6 +310,8 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 
 (defun helm-rg--parse-&key-spec (key-spec)
   (pcase-exhaustive key-spec
+    ((and (or :exhaustive :required) special-sym)
+     special-sym)
     (`(,(or `(,(and (helm-rg-cl-typep keyword)
                     kw-sym)
               ,upat)
@@ -336,36 +338,100 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 (defun helm-rg--flipped-plist-member (prop plist)
   (plist-member plist prop))
 
-(defun helm-rg--read-&key-specs (parsed-key-spec-list)
-  ;; FIXME: add ability to say "there are no other keys in the list"
-  ;; FIXME: check for duplicate keywords
-  (pcase-exhaustive parsed-key-spec-list
-    (`(,cur . ,rest)
-     (cl-destructuring-bind (&key kw-sym upat required initform svar) cur
-       (let ((ignore-sym (cl-gensym)))
-         (helm-rg--join-conditions
-          `(,(helm-rg--join-conditions
-              `((app (helm-rg--flipped-plist-member ,kw-sym)
-                     ,(helm-rg--join-conditions
-                       `(,@(unless required
-                             `((and `nil
-                                    (let ,upat ,initform)
-                                    ,@(and svar `((let ,svar nil))))))
-                         ,(helm-rg--join-conditions
-                           `(,(list '\` (list kw-sym
-                                              (list '\, upat)
-                                              '\, ignore-sym))
-                             ,@(and svar `((let ,svar t))))
-                           :joiner 'and))
-                       :joiner 'or)))
-              :joiner 'and)
-            ,@(and rest (list (helm-rg--read-&key-specs rest))))
-          :joiner 'and))))))
+(defun helm-rg--plist-parse-pairs (plist)
+  (cl-loop
+   with prev-keyword = nil
+   for el in plist
+   for is-keyword-posn = t then (not is-keyword-posn)
+   when is-keyword-posn
+   do (progn
+        (cl-check-type el keyword)
+        (setq prev-keyword el))
+   else
+   collect (list prev-keyword el)
+   into pairs
+   finally return (progn
+                    (cl-assert (not is-keyword-posn) t
+                               (format "Invalid plist %S ends on keyword '%S'"
+                                       plist prev-keyword))
+                    pairs)))
+
+(defun helm-rg--plist-keys (plist)
+  (->> plist
+       (helm-rg--plist-parse-pairs)
+       (-map #'car)))
+
+(defun helm-rg--force-required-parsed-&key-spec (spec)
+  (cl-destructuring-bind (&key kw-sym upat required initform svar) spec
+    ;; TODO: better error messaging here!
+    (cl-assert (not initform))
+    (cl-assert (not svar))
+    (cl-assert (not required))
+    (helm-rg-construct-plist kw-sym upat (:required t) (:initform nil) (:svar nil))))
+
+(cl-defun helm-rg--find-first-duplicate (seq &key (test #'eq))
+  (cl-loop
+   with tbl = (make-hash-table :test test)
+   for el in seq
+   when (gethash el tbl)
+   return el
+   else do (puthash el t tbl)
+   finally return nil))
+
+(cl-defun helm-rg--read-&key-specs (parsed-key-spec-list &key exhaustive)
+  (let* ((all-keys (->> parsed-key-spec-list
+                        (--keep (pcase-exhaustive it
+                                  (:required nil)
+                                  (x (plist-get x :kw-sym))))))
+         (first-duplicate-key (helm-rg--find-first-duplicate all-keys)))
+    (when first-duplicate-key
+      (error "keyword '%S' provided more than once for keyword set %S"
+             first-duplicate-key all-keys))
+    (let ((pcase-expr
+           (pcase-exhaustive parsed-key-spec-list
+             (`(:required . ,rest)
+              (--> rest
+                   (-map #'helm-rg--force-required-parsed-&key-spec it)
+                   (helm-rg--read-&key-specs it)))
+             (`(,cur . ,rest)
+              (helm-rg--join-conditions
+               `(,(helm-rg--join-conditions
+                   (cl-destructuring-bind (&key kw-sym upat required initform svar) cur
+                     `((app (helm-rg--flipped-plist-member ,kw-sym)
+                            ,(helm-rg--join-conditions
+                              `(,@(unless required
+                                    `((and `nil
+                                           (let ,upat ,initform)
+                                           ,@(and svar `((let ,svar nil))))))
+                                ,(helm-rg--join-conditions
+                                  `(,(list '\` (list kw-sym
+                                                     (list '\, upat)
+                                                     '\, (cl-gensym)))
+                                    ,@(and svar `((let ,svar t))))
+                                  :joiner 'and))
+                              :joiner 'or))))
+                   :joiner 'and)
+                 ,@(and rest (list (helm-rg--read-&key-specs rest))))
+               :joiner 'and)))))
+      (if exhaustive
+          (helm-rg--with-gensyms (exp-plist-keys all-keys-val)
+            `(and
+              ;; NB: we do not attempt to parse the `pcase' subject as a plist unless `:exhaustive'
+              ;; is provided -- this is intentional.
+              (and (app (helm-rg--plist-keys) ,exp-plist-keys)
+                   (guard (not (-difference ,exp-plist-keys ',all-keys))))
+              ,pcase-expr))
+        pcase-expr))))
 
 (pcase-defmacro helm-rg-&key (&rest all-key-specs)
-  (->> all-key-specs
-       (-map #'helm-rg--parse-&key-spec)
-       (helm-rg--read-&key-specs)))
+  (pcase all-key-specs
+    (`(:exhaustive . ,rest)
+     (--> rest
+          (-map #'helm-rg--parse-&key-spec it)
+          (helm-rg--read-&key-specs it :exhaustive t)))
+    (specs (->> specs
+                (-map #'helm-rg--parse-&key-spec)
+                (helm-rg--read-&key-specs)))))
 
 (pcase-defmacro helm-rg-&key-required (&rest all-key-specs)
   (->> all-key-specs
