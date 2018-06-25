@@ -252,18 +252,22 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   `(and symbol
         (not keyword)))
 
+(defun helm-rg--make-keyword-from-non-keyword-sym (sym)
+  (cl-check-type sym helm-rg-non-keyword-symbol)
+  (->> sym
+       (symbol-name)
+       (format ":%s")
+       (intern)))
+
 (defun helm-rg--parse-plist-spec (plist-spec)
   (pcase-exhaustive plist-spec
-    ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol)
-          sym)
-     `(,(->> sym
-             (symbol-name)
-             (format ":%s")
-             (intern))
-       ,sym))
     (`(,(and (helm-rg-cl-typep keyword) kw-sym)
        ,value)
-     `(,kw-sym ,value))))
+     `(,kw-sym ,value))
+    ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol)
+          sym)
+     `(,(helm-rg--make-keyword-from-non-keyword-sym sym)
+       ,sym))))
 
 (defmacro helm-rg-construct-plist (&rest plist-specs)
   (->> plist-specs
@@ -304,12 +308,64 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
        (-map #'helm-rg--parse-&optional-spec)
        (helm-rg--read-&optional-specs)))
 
-;; (defun helm-rg--parse-&key-spec (key-spec)
-;;   (pcase-exhaustive key-spec
-;;     (`((,keyword upat)))))
+(defun helm-rg--parse-&key-spec (key-spec)
+  (pcase-exhaustive key-spec
+    (`(,(or `(,(and (helm-rg-cl-typep keyword)
+                    kw-sym)
+              ,upat)
+            (and (or `(,upat) upat)
+                 (let kw-sym (helm-rg--make-keyword-from-non-keyword-sym upat))))
+       . ,(or
+           (and :required
+                (let required t)
+                (let initform nil)
+                (let svar nil))
+           (and (helm-rg-&optional initform svar)
+                (let required nil))))
+     (helm-rg-construct-plist
+      kw-sym upat required initform svar))
+    ((and (helm-rg-cl-typep helm-rg-non-keyword-symbol)
+          upat)
+     (helm-rg-construct-plist
+      (:kw-sym (helm-rg--make-keyword-from-non-keyword-sym upat))
+      upat
+      (:required nil)
+      (:initform nil)
+      (:svar nil)))))
 
-;; (pcase-defmacro helm-rg-&key (key-spec)
-;;   )
+(defun helm-rg--flipped-plist-member (prop plist)
+  (plist-member plist prop))
+
+(defun helm-rg--read-&key-specs (parsed-key-spec-list)
+  ;; FIXME: add ability to say "there are no other keys in the list"
+  ;; FIXME: check for duplicate keywords
+  (pcase-exhaustive parsed-key-spec-list
+    (`(,cur . ,rest)
+     (cl-destructuring-bind (&key kw-sym upat required initform svar) cur
+       (let ((ignore-sym (cl-gensym)))
+         (helm-rg--join-conditions
+          `(,(helm-rg--join-conditions
+              `((app (helm-rg--flipped-plist-member ,kw-sym)
+                     ,(helm-rg--join-conditions
+                       `(,@(unless required
+                             `((and `nil
+                                    (let ,upat ,initform)
+                                    ,@(and svar `((let ,svar nil))))))
+                         ,(helm-rg--join-conditions
+                           `(,(list '\` (list kw-sym
+                                              (list '\, upat)
+                                              '\, ignore-sym))
+                             ,@(and svar `((let ,svar t))))
+                           :joiner 'and))
+                       :joiner 'or)))
+              :joiner 'and)
+            ,@(and rest (list (helm-rg--read-&key-specs rest))))
+          :joiner 'and))))))
+
+(pcase-defmacro helm-rg-&key (&rest all-key-specs)
+  (->> all-key-specs
+       (-map #'helm-rg--parse-&key-spec)
+       (helm-rg--read-&key-specs)))
 
 (defun helm-rg--validate-rx-kwarg (keyword-sym-for-binding)
   (let ((sym-str (symbol-name keyword-sym-for-binding)))
