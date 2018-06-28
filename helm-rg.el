@@ -164,6 +164,7 @@
 (require 'helm-lib)
 (require 'pcase)
 (require 'rx)
+(require 'subr-x)
 
 
 ;; Customization Helpers
@@ -545,7 +546,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
               (cl-loop
                for quoted-var in bind-vars
                do (progn
-                    (incf group-num-init)
+                    (cl-incf group-num-init)
                     (when (cl-find quoted-var all-bind-vars-mappings)
                       (error (concat "'%S' variable name used a second time "
                                      "in evaluation of form '%S'. "
@@ -563,7 +564,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
             ;; variable onto the list of binding variables.
             (let ((cur-group-num group-num-init))
               (push binding-var all-bind-vars-mappings)
-              (incf group-num-init)
+              (cl-incf group-num-init)
               (cl-loop
                for sub-rx in rx-forms
                collect (cl-destructuring-bind (&key transformed bind-vars)
@@ -571,7 +572,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                          (cl-loop
                           for quoted-var in bind-vars
                           do (progn
-                               (incf group-num-init)
+                               (cl-incf group-num-init)
                                (when (cl-find quoted-var all-bind-vars-mappings)
                                  (error (concat "'%S' variable name used a second time "
                                                 "in declaration of regexp group '%S'. "
@@ -1169,7 +1170,7 @@ Make a dummy process if the input is empty with a clear message to the user."
               (let ((lines-diff (- match-line-num cur-line)))
                 (cl-assert (>= lines-diff 0))
                 (forward-line lines-diff)
-                (incf cur-line lines-diff)
+                (cl-incf cur-line lines-diff)
                 (cl-assert (not (eobp)))
                 (helm-rg--convert-lines-matches-to-overlays line-match-results))))))
 
@@ -1611,7 +1612,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   (let* ((colored-line (ansi-color-apply input-line))
          (string-result
           (cl-destructuring-bind (&key cur-file) helm-rg--process-output-parse-state
-            (if-let ((parsed (helm-rg--process-transition cur-file colored-line)))
+            (if-let* ((parsed (helm-rg--process-transition cur-file colored-line)))
                 (cl-destructuring-bind (&key file-path line-content) parsed
                   (setq-local helm-rg--process-output-parse-state (list :cur-file file-path))
                   ;; Exits here.
