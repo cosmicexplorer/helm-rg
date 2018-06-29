@@ -3,8 +3,7 @@
 (package-initialize)
 
 (defconst dependent-packages
-  '(cl-lib
-    dash
+  '(dash
     helm))
 
 (cl-loop for pkg in dependent-packages
