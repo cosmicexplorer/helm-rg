@@ -992,7 +992,7 @@ This may be expensive for larger files, so it is turned off if
 
 BODY is executed in the original buffer, not the new temp buffer."
   (declare (indent 1))
-  (let ((cur-buf (gensym "helm-rg--with-named-temp-buffer")))
+  (let ((cur-buf (cl-gensym "helm-rg--with-named-temp-buffer")))
     `(let ((,cur-buf (current-buffer)))
        (with-temp-buffer
          (let ((,name (current-buffer)))
