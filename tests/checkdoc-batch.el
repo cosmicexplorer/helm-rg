@@ -7,4 +7,7 @@ Taken from Emacs 25 source."
     (let ((checkdoc-diagnostic-buffer "*warn*"))
       (checkdoc-current-buffer t))))
 
+(setq checkdoc-force-docstrings-flag nil)
+(setq sentence-end-double-space nil)
+
 (helm-rg-test--checkdoc-file "../helm-rg.el")
