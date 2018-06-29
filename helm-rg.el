@@ -588,24 +588,35 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 
 (defmacro helm-rg-pcase-cl-defmacro (&rest args)
   "`pcase-defmacro', but the --pcase-macroexpander function is a `cl-defun'.
-\n(fn NAME ARGS [DOC] &rest BODY...)"
+
+(fn NAME ARGS [DOC] &rest BODY...)"
   (declare (indent 2) (debug defun) (doc-string 3))
   (->> `(pcase-defmacro ,@args)
        (macroexpand-1)
        (cl-subst 'cl-defun 'defun)))
 
-(helm-rg-pcase-cl-defmacro helm-rg-rx (rx-sexp &key except)
-  ;; TODO: ???/except is there for the byte compiler
-  (cl-destructuring-bind (&key transformed bind-vars) (helm-rg--transform-rx-sexp rx-sexp)
-    (helm-rg--with-gensyms (str-sym)
-      `(and ,str-sym
-            ,(helm-rg--join-conditions
-              `((rx ,transformed)
-                ,@(cl-loop for symbol-to-bind in bind-vars
-                           for match-index upfrom 1
-                           unless (cl-find symbol-to-bind except)
-                           collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
-              :joiner 'and)))))
+(helm-rg-pcase-cl-defmacro helm-rg-rx (rx-sexp)
+  (pcase-exhaustive (helm-rg--transform-rx-sexp rx-sexp)
+    ((helm-rg-&key-complete transformed bind-vars)
+     (helm-rg--with-gensyms (str-sym)
+       `(and ,str-sym
+             ,(helm-rg--join-conditions
+               `((rx ,transformed)
+                 ,@(cl-loop for symbol-to-bind in bind-vars
+                            for match-index upfrom 1
+                            collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
+               :joiner 'and))))))
+
+(defun helm-rg--prefix-symbol-with-underscore (sym)
+  (->> sym
+       (symbol-name)
+       (format "_%s")
+       (intern)))
+
+(defmacro helm-rg-mark-unused (vars &rest body)
+  (declare (indent 1))
+  `(let (,@(--map `(,(helm-rg--prefix-symbol-with-underscore it) ,it) vars))
+     ,@body))
 
 
 ;; Public error types
@@ -1585,20 +1596,19 @@ Merges stdout and stderr, and trims whitespace from the result."
           (let (helm-rg-&key-complete propertized-line match-regions)
             (helm-rg--parse-propertize-match-regions-from-match-line content)))
      (cl-check-type cur-file string)
-     (let* ((_content content)
-            (_whole-line whole-line)
-            (prefixed-line (helm-rg--join-output-line
-                            :cur-file (and helm-rg-include-file-on-every-match-line cur-file)
-                            :line-num-str line-num-str
-                            :propertized-line propertized-line))
-            (line-num (string-to-number line-num-str))
-            (jump-to (list :file cur-file
-                           :line-num line-num
-                           :match-results match-regions))
-            (output-line
-             (propertize prefixed-line helm-rg--jump-location-text-property jump-to)))
-       (list :file-path cur-file
-             :line-content output-line)))
+     (helm-rg-mark-unused (content whole-line)
+       (let* ((prefixed-line (helm-rg--join-output-line
+                              :cur-file (and helm-rg-include-file-on-every-match-line cur-file)
+                              :line-num-str line-num-str
+                              :propertized-line propertized-line))
+              (line-num (string-to-number line-num-str))
+              (jump-to (list :file cur-file
+                             :line-num line-num
+                             :match-results match-regions))
+              (output-line
+               (propertize prefixed-line helm-rg--jump-location-text-property jump-to)))
+         (list :file-path cur-file
+               :line-content output-line))))
     ;; If we see a line with just a filename, we must have just finished the results from another
     ;; file. We update the state to the file parsed from this line, but we may not insert anything
     ;; into the output depending on the user's customizations.
