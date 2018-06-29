@@ -2,7 +2,7 @@ EMACS=emacs
 
 .PHONY: test
 
-test: compile-all checkdoc
+test: compile-all # checkdoc
 	$(EMACS) -Q --batch $(CL) \
 		--eval '(package-initialize)' \
 		--eval '(setq byte-compile-error-on-warn t)' \
