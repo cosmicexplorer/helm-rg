@@ -3,8 +3,12 @@ dist: trusty
 language: generic
 sudo: false
 before_install:
-  - curl -fsSkL https://gist.github.com/rejeep/ebcd57c3af83b049833b/raw > x.sh && source ./x.sh
+  - sudo apt-get build-dep emacs24
+  - git clone https://github.com/rejeep/evm.git $HOME/.evm
+  - export PATH="${HOME}/.evm/bin:${HOME}/.cask/bin:$PATH"
+  - evm config path /tmp
   - evm install $EVM_EMACS --use --skip
+  - curl -fsSkL https://raw.github.com/cask/cask/master/go | python
 env:
   - EVM_EMACS=emacs-24.4-travis
   - EVM_EMACS=emacs-24.5-travis
