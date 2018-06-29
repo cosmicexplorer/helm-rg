@@ -184,7 +184,7 @@
      ,@args))
 
 (defmacro helm-rg--defcustom-from-alist (name alist doc &rest args)
-  "Create a `defcustom' named NAME which allows the keys of ALIST as values.
+  "Create a `defcustom' named NAME which can take the keys of ALIST as values.
 
 The default value for the `defcustom' is the `car' of the first element of ALIST. ALIST must be the
 unquoted name of a variable containing an alist."
@@ -293,12 +293,17 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                       (-flatten-n 1)))
           ,(cl-destructuring-bind (&key upat _initform svar) cur
              (helm-rg--join-conditions
+              ;; FIXME: put the below comment in the docstrings for optional and keyword pcase
+              ;; macros!
               ;; NB: SVAR is bound before INITFORM is evaluated, which means you can refer to SVAR
               ;; within INITFORM (and more importantly, within UPAT)!
               `(,@(and svar `((let ,svar t)))
-                ,(list '\` (cons (list '\, upat)
-                                 (and rest
-                                      (list '\, (helm-rg--read-&optional-specs rest))))))
+                ,(->> (and rest
+                           (->> rest
+                                (helm-rg--read-&optional-specs)
+                                (list '\,)))
+                      (cons (list '\, upat))
+                      (list '\`)))
               :joiner 'and))))))
 
 (pcase-defmacro helm-rg-&optional (&rest all-optional-specs)
@@ -393,24 +398,20 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
              (`(,cur . ,rest)
               (helm-rg--join-conditions
                `(,(helm-rg--join-conditions
-                   (cl-destructuring-bind (&key kw-sym upat required initform svar) cur
+                   (cl-destructuring-bind
+                       (&key kw-sym upat required initform svar) cur
                      `((app (helm-rg--flipped-plist-member ,kw-sym)
                             ,(helm-rg--join-conditions
                               `(,@(unless required
                                     `((and `nil
                                            ,@(and svar `((let ,svar nil)))
                                            (let ,upat ,initform))))
-                                ;; NB: SVAR is bound before INITFORM is evaluated, which means you
-                                ;; can refer to SVAR within INITFORM (and more importantly, within
-                                ;; UPAT)!
                                 ,(helm-rg--join-conditions
                                   `(,@(and svar `((let ,svar t)))
-                                    ;; This is the result of `plist-member', from the
-                                    ;; `helm-rg--flipped-plist-member' above, so there may be more
-                                    ;; to the list, but we don't need it, so we use the placeholder
-                                    ;; `_', which is unbound. This all becomes:
-                                    ;; `(,kw-sym ,upat . ,_)
-                                    ,(list '\` (list kw-sym (list '\, upat) '\, '_)))
+                                    ;; `plist-member' gives us the rest of the list too -- discard
+                                    ;; by matching it to `_'.
+                                    ,(->> (list kw-sym (list '\, upat) '\, '_)
+                                          (list '\`)))
                                   :joiner 'and))
                               :joiner 'or))))
                    :joiner 'and)
@@ -419,14 +420,17 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
       (if exhaustive
           (helm-rg--with-gensyms (exp-plist-keys)
             `(and
-              ;; NB: we do not attempt to parse the `pcase' subject as a plist unless `:exhaustive'
-              ;; is provided -- this is intentional.
+              ;; NB: we do not attempt to parse the `pcase' subject as a plist (done with
+              ;; `helm-rg--plist-keys') unless `:exhaustive' is provided (we just use `plist-get')
+              ;; -- this is intentional.
               (and (app (helm-rg--plist-keys) ,exp-plist-keys)
                    (guard (not (-difference ,exp-plist-keys ',all-keys))))
               ,pcase-expr))
         pcase-expr))))
 
 (pcase-defmacro helm-rg-&key (&rest all-key-specs)
+  ;;; TODO: add alist matching -- this should be trivial, just allowing
+  ;;; non-keyword syms in the argument spec.
   (pcase all-key-specs
     (`(:exhaustive . ,rest)
      (--> rest
@@ -516,7 +520,10 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                   "must be a keyword arg" (kw-sym :fmt "(e.g. %S)."))))))))
 
 (defun helm-rg--apply-tree-fun (mapper tree)
-  "???"
+  "Apply MAPPER to the nodes of TREE using `-tree-map-nodes'.
+
+This method applies MAPPER, saves the result, and if the result is non-nil, returns the result
+instead of the node of MAPPER, otherwise it continues to recurse down the nodes of TREE."
   (let (intermediate-value-holder)
     (-tree-map-nodes
      (helm-rg--_ (setq intermediate-value-holder (funcall mapper _)))
@@ -524,24 +531,30 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
      tree)))
 
 (defmacro helm-rg--pcase-tree (tree &rest pcase-exprs)
-  "???"
+  "Apply a `pcase' to the nodes of TREE with `helm-rg--apply-tree-fun'.
+
+PCASE-EXPRS are the cases provided to `pcase'. If the `pcase' cases do not
+match the node (returns nil), it continues to recurse down the tree --
+otherwise, the return value replaces the node of the tree."
   (declare (indent 1))
   `(helm-rg--apply-tree-fun
     (helm-rg--_ (pcase _ ,@pcase-exprs))
     ,tree))
 
-;;; FIXME: have some way to get the indices of each bound var for things like match-data etc!!! cmon
-;;; FIXME: remove the unnecessary uses of `helm-rg-deref-sym' in this method! It's more clear when
-;;; the literal symbols are used (in this particular case).
 (defconst helm-rg--named-group-symbol 'named-group)
 (defconst helm-rg--eval-expr-symbol 'eval)
-;;; TODO: add alist/plist matching!
+(defconst helm-rg--duplicate-var-eval-form-error-str
+  "'%S' variable name used a second time in evaluation of form '%S'.
+previous vars were: %S")
+(defconst helm-rg--duplicate-var-literal-form-error-str
+  "'%S' variable named used a second time in declaration of regexp group '%S'.
+previous vars were: %S")
 (cl-defun helm-rg--transform-rx-sexp (sexp &key (group-num-init 1))
   (let ((all-bind-vars-mappings nil))
     (--> (helm-rg--pcase-tree sexp
            ;; `(eval ,eval-expr) => evaluate the expression!
-           ;; NB: this occurs at macro-expansion time, like the equivalent `rx' pcase macro, which
-           ;; is before any surrounding let-bindings occur!)
+           ;; NB: this occurs at macro-expansion time, like the equivalent `rx'
+           ;; pcase macro, which is before any surrounding let-bindings occur!)
            (`(,(helm-rg-deref-sym helm-rg--eval-expr-symbol) ,eval-expr)
             (cl-destructuring-bind (&key transformed bind-vars)
                 (helm-rg--transform-rx-sexp (eval eval-expr t) :group-num-init group-num-init)
@@ -550,9 +563,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                do (progn
                     (cl-incf group-num-init)
                     (when (cl-find quoted-var all-bind-vars-mappings)
-                      (error (concat "'%S' variable name used a second time "
-                                     "in evaluation of form '%S'. "
-                                     "previous vars were: %S")
+                      (error helm-rg--duplicate-var-eval-form-error-str
                              quoted-var eval-expr all-bind-vars-mappings))
                     (push quoted-var all-bind-vars-mappings)))
               transformed))
@@ -576,10 +587,9 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                           do (progn
                                (cl-incf group-num-init)
                                (when (cl-find quoted-var all-bind-vars-mappings)
-                                 (error (concat "'%S' variable name used a second time "
-                                                "in declaration of regexp group '%S'. "
-                                                "previous vars were: %S")
-                                        quoted-var sub-rx all-bind-vars-mappings))
+                                 (error
+                                  helm-rg--duplicate-var-literal-form-error-str
+                                  quoted-var sub-rx all-bind-vars-mappings))
                                (push quoted-var all-bind-vars-mappings)))
                          transformed)
                into all-transformed-exprs
@@ -588,14 +598,15 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
 
 (defmacro helm-rg-pcase-cl-defmacro (&rest args)
   "`pcase-defmacro', but the --pcase-macroexpander function is a `cl-defun'.
-
-(fn NAME ARGS [DOC] &rest BODY...)"
+\n(fn NAME ARGS [DOC] &rest BODY...)"
   (declare (indent 2) (debug defun) (doc-string 3))
   (->> `(pcase-defmacro ,@args)
        (macroexpand-1)
        (cl-subst 'cl-defun 'defun)))
 
 (helm-rg-pcase-cl-defmacro helm-rg-rx (rx-sexp)
+  ;; FIXME: have some way to get the indices of each bound var (for things like
+  ;; `match-data')
   (pcase-exhaustive (helm-rg--transform-rx-sexp rx-sexp)
     ((helm-rg-&key-complete transformed bind-vars)
      (helm-rg--with-gensyms (str-sym)
