@@ -15,6 +15,7 @@ install-packages:
 checkdoc:
 	$(EMACS) -Q --batch $(CL) -l checkdoc-batch.el 2>&1 \
 	| grep -vF 'Some lines are over 80 columns wide' \
+	| grep -vF 'Arguments occur in the doc string out of order' \
 	| grep -E "helm-rg.el:[1-9]+" && exit 1 || exit 0
 
 compile-all:
