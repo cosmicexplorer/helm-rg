@@ -223,7 +223,7 @@ Return a lambda accepting that argument."
 
 This is used because `pcase' doesn't accept conditions with a single element (e.g. `(or 3)')."
   (pcase-exhaustive conditions
-    (`nil (error "nil conditions with joiner '%S'" joiner))
+    (`nil (error "The list of conditions may not be nil (with joiner '%S')" joiner))
     (`(,single-sexp) single-sexp)
     (x `(,joiner ,@x))))
 
@@ -388,7 +388,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                                   (x (plist-get x :kw-sym))))))
          (first-duplicate-key (helm-rg--find-first-duplicate all-keys)))
     (when first-duplicate-key
-      (error "keyword '%S' provided more than once for keyword set %S"
+      (error "Keyword '%S' provided more than once for keyword set %S"
              first-duplicate-key all-keys))
     (let ((pcase-expr
            (pcase-exhaustive parsed-key-spec-list
@@ -490,7 +490,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
          ;; TODO: a "once-only" macro that's just sugar for gensyms
          (format (mapconcat #'identity (list ,@fmts) ,sep) ,@exprs)))
      (kwargs
-      (error "no arguments were declared, but keyword arguments %S were provided" kwargs))
+      (error "No arguments were declared, but keyword arguments %S were provided" kwargs))
      (t
       `(format (mapconcat #'identity (list ,@fmts) ,sep) ,@exprs)))))
 
@@ -498,7 +498,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   (cl-destructuring-bind (&key fmts exprs arguments)
       (helm-rg--read-format-specs format-specs)
     (unless arguments
-      (error "no arguments were declared in the specs %S" format-specs))
+      (error "No arguments were declared in the specs %S" format-specs))
     ;; TODO: make a macro that can create a lambda with visible keyword arguments (a "cl-lambda"
     ;; type thing)
     (helm-rg--with-gensyms (args)
@@ -980,7 +980,7 @@ This may be expensive for larger files, so it is turned off if
 (defun helm-rg--alist-get-exhaustive (key alist)
   "Get KEY from ALIST, or throw an error."
   (or (alist-get key alist)
-      (error "key '%s' was not found in alist '%S' during exhaustive check"
+      (error "Key '%s' was not found in alist '%S' during an exhaustiveness check"
              key alist)))
 
 (defun helm-rg--alist-keys (alist)
@@ -1392,6 +1392,7 @@ TODO: add ert testing for this function!"
    (helm-rg--join "|")))
 
 (defun helm-rg--advance-forward ()
+  "Move forward a line in the results, cycling if necessary."
   (interactive)
   (let ((helm-move-to-line-cycle-in-source t))
     (if (helm-end-of-source-p)
@@ -1399,6 +1400,7 @@ TODO: add ert testing for this function!"
       (helm-next-line))))
 
 (defun helm-rg--advance-backward ()
+  "Move backward a line in the results, cycling if necessary."
   (interactive)
   (let ((helm-move-to-line-cycle-in-source t))
     (if (helm-beginning-of-source-p)
@@ -1475,6 +1477,7 @@ This will loop around the results when advancing past the beginning or end of th
                      (helm-rg--on-same-entry orig-line-parsed cur-line-parsed))))))
 
 (defun helm-rg--file-forward ()
+  "Move forward to the beginning of the next file in the output, cycling if necessary."
   (interactive)
   (condition-case _err
       (helm-rg--move-file 'forward)
@@ -1494,6 +1497,10 @@ This will loop around the results when advancing past the beginning or end of th
       (helm-rg--advance-forward))))
 
 (defun helm-rg--file-backward (stay-if-at-top-of-file)
+  "Move backward to the beginning of the previous file in the output, cycling if necessary.
+
+STAY-IF-AT-TOP-OF-FILE determines whether to move to the previous file if point is at the top of a
+file in the output."
   (interactive (list nil))
   (condition-case _err
       (helm-rg--do-file-backward-dwim stay-if-at-top-of-file)
@@ -1508,7 +1515,8 @@ This will loop around the results when advancing past the beginning or end of th
       (replace-regexp-in-string "" str)))
 
 (defun helm-rg--process-output (exe &rest args)
-  "Get output from a process specified by string arguments.
+  "Get output from a process EXE with string arguments ARGS.
+
 Merges stdout and stderr, and trims whitespace from the result."
   (with-temp-buffer
     (let ((proc (make-process
@@ -1521,7 +1529,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defun helm-rg--check-directory-path (path)
   (if (and path (file-directory-p path)) path
-    (error "path '%S' was not a directory." path)))
+    (error "Path '%S' was not a directory" path)))
 
 (defun helm-rg--make-help-buffer (help-buf-name)
   ;; FIXME: this could be more useful -- but also, is it going to matter to anyone but the
@@ -1664,7 +1672,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                   (setq-local helm-rg--process-output-parse-state (list :cur-file file-path))
                   ;; Exits here.
                   (or line-content ""))
-              (error "line '%s' could not be parsed! state was: '%S'"
+              (error "Line '%s' could not be parsed! state was: '%S'"
                      colored-line helm-rg--process-output-parse-state)))))
     string-result))
 
@@ -1765,9 +1773,9 @@ Merges stdout and stderr, and trims whitespace from the result."
        resulting-line))))
 
 (defun helm-rg--line-from-corresponding-file-for-bounce (scratch-buf)
-  "Get the corresponding line in the file's buffer.
+  "Get the corresponding line in the file's buffer SCRATCH-BUF, and return it.
 
-The buffer has already been advanced to the appropriate line."
+SCRATCH-BUF has already been advanced to the appropriate line."
   (with-current-buffer scratch-buf
     (let ((beg (line-beginning-position))
           (end (line-end-position)))
@@ -2108,22 +2116,26 @@ The buffer has already been advanced to the appropriate line."
     new-buf))
 
 (defun helm-rg--bounce ()
+  "Enter into `helm-rg--bounce-mode' in a new buffer from the results for `helm-rg'."
   (interactive)
   (let ((new-buf (helm-rg--make-buffer-for-bounce)))
     (helm-rg--run-after-exit
      (funcall helm-rg-display-buffer-normal-method new-buf))))
 
 (defun helm-rg--bounce-refresh ()
+  "Revert all the contents in the bounce mode buffer to what they were in the file."
   (interactive)
   ;; TODO: fix prompts
-  (if (and (buffer-modified-p) (not (y-or-n-p "changes found. lose changes and overwrite anyway?")))
-      (message "%s" "no changes were made.")
-    (message "%s" "reading file contents...")
+  (if (and (buffer-modified-p)
+           (not (y-or-n-p "Changes found. lose changes and overwrite anyway? ")))
+      (message "%s" "No changes were made")
+    (message "%s" "Reading file contents... ")
     (save-excursion
       (helm-rg--reread-entries-from-file-for-bounce nil))
     (set-buffer-modified-p nil)))
 
 (defun helm-rg--bounce-refresh-current-file ()
+  "Revert just the contents of the current file in the bounce mode buffer."
   (interactive)
   ;; TODO: add messaging!
   ;; FIXME: add some indicator of whether the current file contents have been modified, not just
@@ -2132,6 +2144,7 @@ The buffer has already been advanced to the appropriate line."
     (helm-rg--reread-entries-from-file-for-bounce t)))
 
 (defun helm-rg--bounce-dump ()
+  "Save the contents of all the files in the bounce mode buffer."
   (interactive)
   (if (not (buffer-modified-p))
       (message "%s" "no changes to save!")
@@ -2141,12 +2154,14 @@ The buffer has already been advanced to the appropriate line."
     (set-buffer-modified-p nil)))
 
 (defun helm-rg--bounce-dump-current-file ()
+  "Save just the content of the current file in the bounce mode buffer."
   (interactive)
   ;; TODO: add messaging!
   (save-excursion
     (helm-rg--save-entries-to-file-for-bounce t)))
 
 (defun helm-rg--spread-match-context (signed-amount)
+  "Read the contents of the current line and SIGNED-AMOUNT lines above or below from the file."
   (interactive "p")
   ;; TODO: add useful messaging!
   (cond
@@ -2158,12 +2173,14 @@ The buffer has already been advanced to the appropriate line."
     (helm-rg--expand-match-context-for-bounce (abs signed-amount) 0))))
 
 (defun helm-rg--expand-match-context (unsigned-amount)
+  "Read the contents of the current line and UNSIGNED-AMOUNT lines above and below from the file."
   (interactive (list (if (numberp current-prefix-arg) (abs current-prefix-arg)
                        helm-rg--default-expand-match-lines-for-bounce)))
   ;; TODO: add useful messaging!
   (helm-rg--expand-match-context-for-bounce unsigned-amount unsigned-amount))
 
 (defun helm-rg--visit-current-file-for-bounce ()
+  "Jump to the current line of the current file where point is at in bounce mode."
   (interactive)
   ;; TODO: add useful messaging!
   ;; TODO: visit the right line number too!!! (if on a match line)
@@ -2217,7 +2234,7 @@ The buffer has already been advanced to the appropriate line."
   (if (helm-rg--is-executable-file helm-rg-git-executable)
       (helm-rg--process-output helm-rg-git-executable
                                "rev-parse" "--show-toplevel")
-    (error "helm-rg-git-executable is not an executable file (was: %S)."
+    (error "The defvar helm-rg-git-executable is not an executable file (was: %S)"
            helm-rg-git-executable)))
 
 (defun helm-rg--interpret-starting-dir (default-directory-spec)
@@ -2228,6 +2245,7 @@ The buffer has already been advanced to the appropriate line."
     ((pred stringp) (helm-rg--check-directory-path default-directory-spec))))
 
 (defun helm-rg--set-case-sensitivity ()
+  "Set the value of `helm-rg--case-sensitivity' and re-run `helm-rg'."
   (interactive)
   (let ((pat helm-pattern)
         (start-dir helm-rg--current-dir))
