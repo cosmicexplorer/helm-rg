@@ -2377,7 +2377,7 @@ in some window, select that window, or else display the help buffer with
          (or (get-buffer helm-rg--ripgrep-help-buffer-name)
              (helm-rg--make-help-buffer helm-rg--ripgrep-help-buffer-name))))
     (if pfx (switch-to-buffer filled-out-help-buf)
-      (if-let* ((buf-win (get-buffer-window filled-out-help-buf t)))
+      (-if-let* ((buf-win (get-buffer-window filled-out-help-buf t)))
           (select-window buf-win)
         (pop-to-buffer filled-out-help-buf)))))
 
