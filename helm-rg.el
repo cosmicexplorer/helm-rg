@@ -186,8 +186,9 @@
 (defmacro helm-rg--defcustom-from-alist (name alist doc &rest args)
   "Create a `defcustom' named NAME which can take the keys of ALIST as values.
 
-The default value for the `defcustom' is the `car' of the first element of ALIST. ALIST must be the
-unquoted name of a variable containing an alist."
+The DOC and ARGS are passed on to the generated `defcustom' form. The default value for the
+`defcustom' is the `car' of the first element of ALIST. ALIST must be the unquoted name of a
+variable containing an alist."
   (declare (indent 2))
   (helm-rg--gen-defcustom-form-from-alist name alist doc args))
 
@@ -445,7 +446,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
   `(helm-rg-&key :exhaustive :required ,@all-key-specs))
 
 (defun helm-rg--parse-format-spec (format-spec)
-  "Convert a list of strings and other things into some result for `helm-rg--make-formatter'."
+  "Convert a list FORMAT-SPEC into some result for `helm-rg--make-formatter'."
   (pcase-exhaustive format-spec
     ((and (helm-rg-cl-typep string) x)
      (helm-rg-construct-plist
@@ -803,8 +804,10 @@ This is purely an interface change, and does not affect anything else."
 ;; Constants
 (defconst helm-rg--color-format-argument-alist
   '((red :cmd-line "red" :text-property "red3"))
-  "Alist mapping (a symbol named after a color) -> (strings to describe that symbol on the ripgrep
-command line and in an emacs text property). This allows `helm-rg' to identify matched text using
+  "Alist mapping symbols to color descriptions.
+
+This alist mapps (a symbol named after a color) -> (strings to describe that symbol on the ripgrep
+command line and in an Emacs text property). This allows `helm-rg' to identify matched text using
 ripgrep's highlighted output directly instead of doing it ourselves, by telling ripgrep to highlight
 matches a specific color, then searching for that specific color as a text property in the output.")
 
@@ -818,7 +821,7 @@ matches a specific color, then searching for that specific color as a text prope
     (case-insensitive "--ignore-case"))
   "Alist of methods of treating case-sensitivity when invoking ripgrep.
 
-The value is the ripgrep command-line argument which enforces the specified type of
+The value is the ripgrep command line argument which enforces the specified type of
 case-sensitivity.")
 
 (defconst helm-rg--ripgrep-argv-format-alist
@@ -952,7 +955,7 @@ using `helm-rg--async-persistent-action'.")
 (defvar helm-rg--last-argv nil
   "Argument list for the most recent ripgrep invocation.
 
-Used for the command-line header in `helm-rg--bounce-mode'.")
+Used for the command line header in `helm-rg--bounce-mode'.")
 
 
 ;; Buffer-local Variables
@@ -1015,7 +1018,10 @@ BODY is executed in the original buffer, not the new temp buffer."
 
 ;; Logic
 (defun helm-rg--make-dummy-process (input err-msg)
-  "Make a process that immediately exits to display just a title."
+  "Make a process that immediately exits to display just a title.
+
+Provide INPUT to represent the `helm-pattern', and ERR-MSG as the reasoning for failing to display
+any results."
   (let* ((dummy-proc (make-process
                       :name helm-rg--process-name
                       :buffer helm-rg--process-buffer-name
@@ -1071,7 +1077,7 @@ BODY is executed in the original buffer, not the new temp buffer."
       (string-blank-p glob-str)))
 
 (defun helm-rg--construct-argv (pattern)
-  "Create an argument list for the ripgrep command.
+  "Create an argument list from the `helm-pattern' PATTERN for the ripgrep command.
 
 This argument list is propertized for display in the `helm-buffer' header when using `helm-rg', and
 is used directly to invoke ripgrep. It uses `defcustom' values, and `defvar' values bound in other
@@ -1133,8 +1139,8 @@ Make a dummy process if the input is empty with a clear message to the user."
     (delete-overlay it))
   (setq helm-rg--current-line-overlay nil))
 
-(defun helm-rg--collect-lines-matches-current-file (orig-line-parsed _file-abs-path)
-  "Collect all matches from ripgrep's highlighted output from from FILE-ABS-PATH."
+(defun helm-rg--collect-lines-matches-current-file (orig-line-parsed)
+  "Collect all of the matched text regions from ripgrep's highlighted output from ORIG-LINE-PARSED."
   ;; If we are on a file's line, stay where we are, otherwise back up to the closest file line above
   ;; the current line (this is the file that "owns" the entry).
   (cl-destructuring-bind (&key
@@ -1205,8 +1211,9 @@ Make a dummy process if the input is empty with a clear message to the user."
                 (helm-rg--convert-lines-matches-to-overlays line-match-results))))))
 
 (defun helm-rg--async-action (parsed-output &optional highlight-matches)
-  "Visit the file at the line and column specified by CAND.
-The match is highlighted in its buffer."
+  "Visit the file at the line and column according to PARSED-OUTPUT.
+
+The match is highlighted in its buffer if HIGHLIGHT-MATCHES is non-nil."
   (let ((default-directory helm-rg--current-dir)
         (helm-rg--display-buffer-method
          (or helm-rg--display-buffer-method
@@ -1251,7 +1258,7 @@ The match is highlighted in its buffer."
                 (setq helm-rg--previously-highlighted-buffer buffer-to-display)
                 ;; Clear the old lines (from the previous buffer) and make new ones.
                 (helm-rg--delete-match-overlays)
-                (helm-rg--collect-lines-matches-current-file parsed-output file-abs-path)))))
+                (helm-rg--collect-lines-matches-current-file parsed-output)))))
         ;; Display the buffer visiting the file with the matches.
         (funcall helm-rg--display-buffer-method buffer-to-display)
         ;; Make overlays highlighting all the matches (unless we are in the same file as
@@ -1277,8 +1284,9 @@ The match is highlighted in its buffer."
         (recenter)))))
 
 (defun helm-rg--async-persistent-action (parsed-output)
-  "Visit the file at the line and column specified by CAND.
-Call `helm-rg--async-action', but push the buffer corresponding to CAND to
+  "Visit the file at the line and column specified by PARSED-OUTPUT.
+
+Call `helm-rg--async-action', but push the buffer corresponding to PARSED-OUTPUT to
 `helm-rg--matches-in-current-file-overlays', if there was no buffer visiting it already."
   (let ((helm-rg--append-persistent-buffers t)
         (helm-rg--display-buffer-method helm-rg--persistent-action-display-buffer-method))
@@ -1651,7 +1659,7 @@ Merges stdout and stderr, and trims whitespace from the result."
   (let* ((colored-line (ansi-color-apply input-line))
          (string-result
           (cl-destructuring-bind (&key cur-file) helm-rg--process-output-parse-state
-            (if-let* ((parsed (helm-rg--process-transition cur-file colored-line)))
+            (-if-let* ((parsed (helm-rg--process-transition cur-file colored-line)))
                 (cl-destructuring-bind (&key file-path line-content) parsed
                   (setq-local helm-rg--process-output-parse-state (list :cur-file file-path))
                   ;; Exits here.
