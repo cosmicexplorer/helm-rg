@@ -2,7 +2,7 @@
 
 (setq package-archives
       '(("gnu" . "https://elpa.gnu.org/packages/")
-        ("melpa" . "https://melpa.milkbox.net/packages/")))
+        ("melpa" . "http://melpa.milkbox.net/packages/")))
 
 (defconst dependent-packages '(dash helm))
 
