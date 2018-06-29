@@ -601,7 +601,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
      (helm-rg--with-gensyms (str-sym)
        `(and ,str-sym
              ,(helm-rg--join-conditions
-               `((rx ,transformed)
+               `((pred (string-match (rx-to-string ',transformed)))
                  ,@(cl-loop for symbol-to-bind in bind-vars
                             for match-index upfrom 1
                             collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
