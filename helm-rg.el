@@ -1,4 +1,13 @@
 ;;; helm-rg.el --- a helm interface to ripgrep -*- lexical-binding: t -*-
+
+;; Author: Danny McClanahan
+;; Version: 0.1
+;; URL: https://github.com/cosmicexplorer/helm-rg
+;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5") (dash "2.13.0"))
+;; Keywords: find, file, files, helm, fast, rg, ripgrep, grep, search, match
+
+;; This file is not part of GNU Emacs.
+
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation; either version 3, or (at your option)
@@ -11,12 +20,6 @@
 
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-;; Author: Danny McClanahan
-;; Version: 0.1
-;; URL: https://github.com/cosmicexplorer/helm-rg
-;; Package-Requires: ((emacs "25") (helm "2.8.8") (cl-lib "0.5") (dash "2.13.0"))
-;; Keywords: find, file, files, helm, fast, rg, ripgrep, grep, search
 
 
 ;;; Commentary:
@@ -287,7 +290,7 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                                  (let ,upat ,initform))))
                       (funcall #'append)
                       (-flatten-n 1)))
-          ,(cl-destructuring-bind (&key upat initform svar) cur
+          ,(cl-destructuring-bind (&key upat _initform svar) cur
              (helm-rg--join-conditions
               ;; NB: SVAR is bound before INITFORM is evaluated, which means you can refer to SVAR
               ;; within INITFORM (and more importantly, within UPAT)!
@@ -451,9 +454,8 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
      (helm-rg-construct-plist (:fmt "%s") (:expr non-kw-sym) (:argument non-kw-sym)))
     (`(,(or (and (helm-rg-cl-typep keyword)
                  (app (helm-rg--make-non-keyword-sym-from-keyword-sym)
-                      non-kw-sym)
-                 (let argument non-kw-sym)
-                 (let expr non-kw-sym))
+                      argument)
+                 (let expr argument))
             (and expr (let argument nil)))
        . ,(helm-rg-&key (fmt "%s")))
      (helm-rg-construct-plist fmt expr argument))))
@@ -1103,14 +1105,14 @@ Make a dummy process if the input is empty with a clear message to the user."
     (delete-overlay it))
   (setq helm-rg--current-line-overlay nil))
 
-(defun helm-rg--collect-lines-matches-current-file (orig-line-parsed file-abs-path)
+(defun helm-rg--collect-lines-matches-current-file (orig-line-parsed _file-abs-path)
   "Collect all matches from ripgrep's highlighted output from from FILE-ABS-PATH."
   ;; If we are on a file's line, stay where we are, otherwise back up to the closest file line above
   ;; the current line (this is the file that "owns" the entry).
   (cl-destructuring-bind (&key
                           ((:file orig-file))
-                          ((:line-num orig-line-num))
-                          ((:match-results orig-match-results)))
+                          ((:line-num _orig-line-num))
+                          ((:match-results _orig-match-results)))
       orig-line-parsed
     ;; Collect all the results on all matching lines of the file.
     (with-helm-window
@@ -1118,7 +1120,7 @@ Make a dummy process if the input is empty with a clear message to the user."
       (let ((all-match-results nil))
         ;; Process the first line (`helm-rg--iterate-results' will advance
         ;; past the initial element).
-        (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
+        (cl-destructuring-bind (&key _file line-num match-results) (helm-rg--current-jump-location)
           (when (and line-num match-results)
             (push (list :match-line-num line-num
                         :line-match-results match-results)
@@ -1438,7 +1440,7 @@ This will loop around the results when advancing past the beginning or end of th
 
 (defun helm-rg--file-forward ()
   (interactive)
-  (condition-case err
+  (condition-case _err
       (helm-rg--move-file 'forward)
     (helm-rg--helm-buffer-iteration-error
      (with-helm-window (helm-end-of-buffer)))))
@@ -1457,7 +1459,7 @@ This will loop around the results when advancing past the beginning or end of th
 
 (defun helm-rg--file-backward (stay-if-at-top-of-file)
   (interactive (list nil))
-  (condition-case err
+  (condition-case _err
       (helm-rg--do-file-backward-dwim stay-if-at-top-of-file)
     (helm-rg--helm-buffer-iteration-error
      (with-helm-window (helm-beginning-of-buffer)))))
@@ -1537,21 +1539,21 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defun helm-rg--parse-propertize-match-regions-from-match-line (match-line)
   (cl-loop
    with line-char-index = 0
-   with cur-match-str = ""
-   with match-regions = nil
    for match-beg = (helm-rg--first-match-start-ripgrep-output line-char-index match-line)
-   if (not match-beg)
+   unless match-beg
    return (list :propertized-line (concat cur-match-str
                                           (substring match-line match-end))
                 :match-regions match-regions)
-   concat (substring match-line match-end match-beg) into cur-match-str
+   concat (substring match-line match-end match-beg)
+   into cur-match-str
    for match-end = (helm-rg--first-match-start-ripgrep-output match-beg match-line t)
+   collect (list :beg match-beg :end match-end)
+   into match-regions
    do (setq line-char-index match-end)
    concat (--> match-line
                (substring it match-beg match-end)
                (helm-rg--make-face 'helm-rg-match-text-face it))
-   into cur-match-str
-   collect (list :beg match-beg :end match-end) into match-regions))
+   into cur-match-str))
 
 (cl-defun helm-rg--join-output-line (&key cur-file line-num-str propertized-line)
   (helm-rg--join (->> ":"
@@ -1590,12 +1592,13 @@ Merges stdout and stderr, and trims whitespace from the result."
     ((helm-rg-rx (eval helm-rg--output-new-file-line-rx-expr))
      ;; FIXME: why does this fail?
      ;; (cl-check-type cur-file null)
-     (let* ((whole-line (helm-rg--make-face 'helm-rg-file-match-face whole-line))
-            (file-path (helm-rg--make-face 'helm-rg-file-match-face file-path))
-            (jump-to (list :file file-path))
-            (output-line (propertize whole-line helm-rg--jump-location-text-property jump-to)))
+     (let* ((whole-line-effaced (helm-rg--make-face 'helm-rg-file-match-face whole-line))
+            (file-path-effaced (helm-rg--make-face 'helm-rg-file-match-face file-path))
+            (jump-to (list :file file-path-effaced))
+            (output-line
+             (propertize whole-line-effaced helm-rg--jump-location-text-property jump-to)))
        (append
-        (list :file-path file-path)
+        (list :file-path file-path-effaced)
         (and helm-rg-prepend-file-name-line-at-top-of-matches
              (list :line-content output-line)))))))
 
@@ -1754,7 +1757,7 @@ The buffer has already been advanced to the appropriate line."
 (defun helm-rg--expand-match-lines-for-bounce (before after match-loc scratch-buf)
   (cl-destructuring-bind (&key ((:file orig-file))
                                ((:line-num orig-line-num))
-                               ((:match-results orig-match-results)))
+                               ((:match-results _orig-match-results)))
       match-loc
     ;; Insert any "before" lines.
     (save-excursion
