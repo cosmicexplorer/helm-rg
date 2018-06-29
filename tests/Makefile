@@ -9,11 +9,14 @@ test: compile-all # checkdoc
 		-l ert -l ../helm-rg.elc -l helm-rg-test.elc \
 		--eval '(ert-run-tests-batch-and-exit $(SELECTOR))'
 
+install-packages:
+	$(EMACS) -Q --batch -l install-packages.el
+
 checkdoc:
 	$(EMACS) -Q --batch $(CL) -l checkdoc-batch.el 2>&1 \
 	| grep -E "helm-rg.el:[1-9]+" && exit 1 || exit 0
 
-compile-all:
+compile-all: install-packages
 	$(EMACS) -Q --batch \
 		--eval '(package-initialize)' \
 		--eval '(setq byte-compile-error-on-warn t)' \
@@ -22,12 +25,3 @@ compile-all:
 
 clean:
 	rm -f *.elc ../*.elc
-
-evm:
-	$(MAKE) test EMACS="$(shell evm bin emacs-24.1)" CL="-l cl-lib-0.5.el"
-	$(MAKE) test EMACS="$(shell evm bin emacs-24.2)" CL="-l cl-lib-0.5.el"
-	$(MAKE) test EMACS="$(shell evm bin emacs-24.3)" CL=""
-	$(MAKE) test EMACS="$(shell evm bin emacs-24.4)" CL=""
-	$(MAKE) test EMACS="$(shell evm bin emacs-24.5)" CL=""
-	$(MAKE) test EMACS="$(shell evm bin emacs-25.1)" CL=""
-	$(MAKE) test EMACS="$(shell evm bin emacs-25.2)" CL=""
