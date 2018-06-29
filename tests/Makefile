@@ -17,7 +17,7 @@ checkdoc:
 	| grep -vF 'Some lines are over 80 columns wide' \
 	| grep -E "helm-rg.el:[1-9]+" && exit 1 || exit 0
 
-compile-all: install-packages
+compile-all:
 	$(EMACS) -Q --batch \
 		--eval '(package-initialize)' \
 		--eval '(setq byte-compile-error-on-warn t)' \
