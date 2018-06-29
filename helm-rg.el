@@ -601,6 +601,8 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
      (helm-rg--with-gensyms (str-sym)
        `(and ,str-sym
              ,(helm-rg--join-conditions
+               ;; We would just delegate to `rx--pcase-macroexpander', but requiring subr errors
+               ;; out, extremely mysteriously.
                `((pred (string-match (rx-to-string ',transformed)))
                  ,@(cl-loop for symbol-to-bind in bind-vars
                             for match-index upfrom 1
@@ -1588,7 +1590,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defun helm-rg--process-transition (cur-file line)
   (pcase-exhaustive line
     ;; When we see an empty line, we clear all the state.
-    ((rx (: bos eos))
+    ((helm-rg-rx (: bos eos))
      (list :file-path nil))
     ;; When we see a line with a number and text, we must be collecting match lines from a
     ;; particular file right now. Parse the line and add "jump" information as text properties.
