@@ -163,6 +163,7 @@
 (require 'dash)
 (require 'font-lock)
 (require 'helm)
+(require 'helm-files)
 (require 'helm-grep)
 (require 'helm-lib)
 (require 'pcase)
@@ -1464,6 +1465,13 @@ This will loop around the results when advancing past the beginning or end of th
     (helm-rg--helm-buffer-iteration-error
      (with-helm-window (helm-beginning-of-buffer)))))
 
+(defconst helm--whitespace-trim-rx-expr
+  '(| (: bos (+ whitespace)) (: (+ whitespace) eos)))
+
+(defun helm-rg--trim-whitespace (str)
+  (-> (rx-to-string helm--whitespace-trim-rx-expr)
+      (replace-regexp-in-string "" str)))
+
 (defun helm-rg--process-output (exe &rest args)
   "Get output from a process specified by string arguments.
 Merges stdout and stderr, and trims whitespace from the result."
@@ -1474,7 +1482,7 @@ Merges stdout and stderr, and trims whitespace from the result."
                  :command `(,exe ,@args)
                  :sentinel #'ignore)))
       (while (accept-process-output proc nil nil t)))
-    (trim-whitespace (buffer-string))))
+    (helm-rg--trim-whitespace (buffer-string))))
 
 (defun helm-rg--check-directory-path (path)
   (if (and path (file-directory-p path)) path
@@ -1705,7 +1713,7 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defun helm-rg--propertize-match-line-from-file-for-bounce (line-to-propertize jump-loc)
   ;; Copy the input string, because we will be mutating it.
-  (let ((resulting-line (copy-seq line-to-propertize)))
+  (let ((resulting-line (cl-copy-seq line-to-propertize)))
     (cl-destructuring-bind (&key file line-num match-results) jump-loc
       ;; Apply face to matches within the text to insert.
       (cl-loop for match in match-results
