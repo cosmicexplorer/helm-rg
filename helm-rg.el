@@ -417,7 +417,6 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                  ,@(and rest (list (helm-rg--read-&key-specs rest))))
                :joiner 'and)))))
       (if exhaustive
-          ;; FIXME: should be using a "once-only" type macro here!
           (helm-rg--with-gensyms (exp-plist-keys)
             `(and
               ;; NB: we do not attempt to parse the `pcase' subject as a plist unless `:exhaustive'
@@ -587,22 +586,26 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
                finally return `(group-n ,cur-group-num ,@all-transformed-exprs)))))
          (list :transformed it :bind-vars (reverse all-bind-vars-mappings)))))
 
-(pcase-defmacro helm-rg-rx (&rest rx-sexps)
-  (let ((transformed-rx-sexp
-         (-> rx-sexps
-             ;; We need to join the sexps so that we can keep the regex group numbers uniformly
-             ;; increasing across the consituent forms of the generated regexp.
-             (helm-rg--join-conditions :joiner 'and)
-             (helm-rg--transform-rx-sexp))))
-    (cl-destructuring-bind (&key transformed bind-vars) transformed-rx-sexp
-      (helm-rg--with-gensyms (str-sym)
-        `(and ,str-sym
-              ,(helm-rg--join-conditions
-                `((rx ,transformed)
-                  ,@(cl-loop for symbol-to-bind in bind-vars
-                             for match-index upfrom 1
-                             collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
-                :joiner 'and))))))
+(defmacro helm-rg-pcase-cl-defmacro (&rest args)
+  "`pcase-defmacro', but the --pcase-macroexpander function is a `cl-defun'.
+\n(fn NAME ARGS [DOC] &rest BODY...)"
+  (declare (indent 2) (debug defun) (doc-string 3))
+  (->> `(pcase-defmacro ,@args)
+       (macroexpand-1)
+       (cl-subst 'cl-defun 'defun)))
+
+(helm-rg-pcase-cl-defmacro helm-rg-rx (rx-sexp &key except)
+  ;; TODO: ???/except is there for the byte compiler
+  (cl-destructuring-bind (&key transformed bind-vars) (helm-rg--transform-rx-sexp rx-sexp)
+    (helm-rg--with-gensyms (str-sym)
+      `(and ,str-sym
+            ,(helm-rg--join-conditions
+              `((rx ,transformed)
+                ,@(cl-loop for symbol-to-bind in bind-vars
+                           for match-index upfrom 1
+                           unless (cl-find symbol-to-bind except)
+                           collect `(let ,symbol-to-bind (match-string ,match-index ,str-sym))))
+              :joiner 'and)))))
 
 
 ;; Public error types
@@ -1582,7 +1585,9 @@ Merges stdout and stderr, and trims whitespace from the result."
           (let (helm-rg-&key-complete propertized-line match-regions)
             (helm-rg--parse-propertize-match-regions-from-match-line content)))
      (cl-check-type cur-file string)
-     (let* ((prefixed-line (helm-rg--join-output-line
+     (let* ((_content content)
+            (_whole-line whole-line)
+            (prefixed-line (helm-rg--join-output-line
                             :cur-file (and helm-rg-include-file-on-every-match-line cur-file)
                             :line-num-str line-num-str
                             :propertized-line propertized-line))
@@ -1659,22 +1664,23 @@ Merges stdout and stderr, and trims whitespace from the result."
   (let ((inhibit-read-only t)
         (pt (point)))
     ;; NB: the file line is NOT readonly!!! It can be used to modify the file names.
-    (cl-destructuring-bind (&key file line-num match-results)
-        cur-jump-loc
-      (cl-check-type file string)
-      ;; FIXME: add some divider above each file line!!!
-      (if (not line-num)
-          ;; We already have an appropriate file heading. We assume all file entries are a single
-          ;; line at this point, because the user has not started editing the buffer yet.
-          (helm-rg--down-for-bounce)
-        ;; We need to insert the file's line.
-        ;; NB: we cut off the location entry to only the file, because we are
-        ;; making a file header line.
-        ;; TODO: make file header line creation into a factory method
-        (let* ((file-entry-loc (list :file file))
-               (propertized-file-entry-line
-                (propertize file helm-rg--jump-location-text-property file-entry-loc)))
-          (insert (format "%s\n" propertized-file-entry-line)))))
+    (pcase-exhaustive cur-jump-loc
+      ((helm-rg-&key line-num :required file)
+       (cl-check-type file string)
+       ;; FIXME: add some divider above each file line!!!
+       (if (not line-num)
+           ;; We already have an appropriate file heading. We assume all file entries are a single
+           ;; line at this point, because the user has not started editing the buffer yet.
+           (helm-rg--down-for-bounce)
+         ;; We need to insert the file's line.
+         ;; NB: we cut off the location entry to only the file, because we are
+         ;; making a file header line.
+         ;; TODO: make file header line creation into a factory method
+         (let* ((file-entry-loc (list :file file))
+                (propertized-file-entry-line
+                 (propertize file helm-rg--jump-location-text-property file-entry-loc)))
+           (insert (format "%s\n" propertized-file-entry-line))))))
+
     ;; TODO: ???
     (put-text-property pt (point) 'front-sticky `(face ,helm-rg--jump-location-text-property))))
 
@@ -1691,22 +1697,23 @@ Merges stdout and stderr, and trims whitespace from the result."
 
 (defun helm-rg--format-match-line-for-bounce (jump-loc)
   (let ((inhibit-read-only t))
-    (cl-destructuring-bind (&key file line-num match-results) jump-loc
-      ;; TODO: remove the file from the match line if it's there (if
-      ;; `helm-rg-include-file-on-every-match-line' is non-nil)!
-      ;; (i.e. just check to make sure this line works)
-      (when (looking-at (rx-to-string `(: bol ,file ":")))
-        (replace-match ""))
-      ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
-      ;; matches)!
-      ;; We are looking at a line number.
-      (cl-assert (looking-at (rx-to-string `(: bol (group-n 1 ,(number-to-string line-num)) ":"))))
-      ;; Make the propertized line number text read-only.
-      (let* ((matched-number-str (match-string 1))
-             (matched-num (string-to-number matched-number-str)))
-        ;; TODO: is this check necessary?
-        (cl-assert (= matched-num line-num)))
-      (helm-rg--propertize-line-number-prefix-range (match-beginning 0) (match-end 0))))
+    (pcase-exhaustive jump-loc
+      ((helm-rg-&key :required file line-num)
+       ;; TODO: remove the file from the match line if it's there (if
+       ;; `helm-rg-include-file-on-every-match-line' is non-nil)!
+       ;; (i.e. just check to make sure this line works)
+       (when (looking-at (rx-to-string `(: bol ,file ":")))
+         (replace-match ""))
+       ;; TODO: fix cl-destructuring-bind, and merge with pcase and regexp matching (allowing named
+       ;; matches)!
+       ;; We are looking at a line number.
+       (cl-assert (looking-at (rx-to-string `(: bol (group-n 1 ,(number-to-string line-num)) ":"))))
+       ;; Make the propertized line number text read-only.
+       (let* ((matched-number-str (match-string 1))
+              (matched-num (string-to-number matched-number-str)))
+         ;; TODO: is this check necessary?
+         (cl-assert (= matched-num line-num)))
+       (helm-rg--propertize-line-number-prefix-range (match-beginning 0) (match-end 0)))))
   ;; We can use `forward-line' here, because we are building the bounce buffer (so there are no
   ;; multiline entries).
   (forward-line 1))
@@ -1714,16 +1721,17 @@ Merges stdout and stderr, and trims whitespace from the result."
 (defun helm-rg--propertize-match-line-from-file-for-bounce (line-to-propertize jump-loc)
   ;; Copy the input string, because we will be mutating it.
   (let ((resulting-line (cl-copy-seq line-to-propertize)))
-    (cl-destructuring-bind (&key file line-num match-results) jump-loc
-      ;; Apply face to matches within the text to insert.
-      (cl-loop for match in match-results
-               do (cl-destructuring-bind (&key beg end) match
-                    (put-text-property beg end 'face 'helm-rg-match-text-face
-                                       resulting-line)))
-      ;; Apply the jump location to the text to insert.
-      (put-text-property 0 (length resulting-line) helm-rg--jump-location-text-property jump-loc
-                         resulting-line)
-      resulting-line)))
+    (pcase-exhaustive jump-loc
+      ((helm-rg-&key :required match-results)
+       ;; Apply face to matches within the text to insert.
+       (cl-loop for match in match-results
+                do (cl-destructuring-bind (&key beg end) match
+                     (put-text-property beg end 'face 'helm-rg-match-text-face
+                                        resulting-line)))
+       ;; Apply the jump location to the text to insert.
+       (put-text-property 0 (length resulting-line) helm-rg--jump-location-text-property jump-loc
+                          resulting-line)
+       resulting-line))))
 
 (defun helm-rg--line-from-corresponding-file-for-bounce (scratch-buf)
   "Get the corresponding line in the file's buffer.
@@ -1737,14 +1745,13 @@ The buffer has already been advanced to the appropriate line."
       (buffer-substring beg end))))
 
 (defun helm-rg--rewrite-propertized-match-line-from-file-for-bounce (scratch-buf jump-loc)
-  (cl-destructuring-bind (&key file line-num match-results) jump-loc
-    (let* ((cur-line-in-file-to-propertize
-            (helm-rg--line-from-corresponding-file-for-bounce scratch-buf))
-           (line-to-insert
-            (helm-rg--propertize-match-line-from-file-for-bounce
-             cur-line-in-file-to-propertize jump-loc)))
-      (delete-region (point) (line-end-position))
-      (insert line-to-insert))))
+  (let* ((cur-line-in-file-to-propertize
+          (helm-rg--line-from-corresponding-file-for-bounce scratch-buf))
+         (line-to-insert
+          (helm-rg--propertize-match-line-from-file-for-bounce
+           cur-line-in-file-to-propertize jump-loc)))
+    (delete-region (point) (line-end-position))
+    (insert line-to-insert)))
 
 (cl-defun helm-rg--insert-new-match-line-for-bounce (&key file line-to-insert line-contents)
   (let* ((output-line (helm-rg--join-output-line
@@ -1800,8 +1807,7 @@ The buffer has already been advanced to the appropriate line."
      for line-to-insert from (1+ orig-line-num) upto (+ orig-line-num after)
      do (helm-rg--down-for-bounce)
      for cur-loc = (helm-rg--current-jump-location)
-     do (let ((cur-file (plist-get cur-loc :file))
-              (cur-line-num (plist-get cur-loc :line-num)))
+     do (let ((cur-line-num (plist-get cur-loc :line-num)))
           (with-current-buffer scratch-buf
             (forward-line 1))
           ;; Checking for line-num means this will always insert before a file header (the next
@@ -1822,17 +1828,18 @@ The buffer has already been advanced to the appropriate line."
   (cl-check-type after natnum)
   (save-excursion
     (let ((cur-match-entry (helm-rg--current-jump-location)))
-      (cl-destructuring-bind (&key file line-num match-results) cur-match-entry
-        (if (not line-num)
-            ;; We are on a file header line.
-            (message "the current line is a file: %s and currently cannot be expanded from." file)
-          (helm-rg--apply-matches-with-file-for-bounce
-           :match-line-visitor (lambda (scratch-buf match-loc)
-                                 (helm-rg--expand-match-lines-for-bounce
-                                  before after match-loc scratch-buf))
-           ;; TODO: make the filter kwargs into a single object, or a single function.
-           :filter-to-file file
-           :filter-to-match cur-match-entry))))))
+      (pcase-exhaustive cur-match-entry
+        ((helm-rg-&key line-num :required file)
+         (if (not line-num)
+             ;; We are on a file header line.
+             (message "the current line is a file: %s and currently cannot be expanded from." file)
+           (helm-rg--apply-matches-with-file-for-bounce
+            :match-line-visitor (lambda (scratch-buf match-loc)
+                                  (helm-rg--expand-match-lines-for-bounce
+                                   before after match-loc scratch-buf))
+            ;; TODO: make the filter kwargs into a single object, or a single function.
+            :filter-to-file file
+            :filter-to-match cur-match-entry)))))))
 
 (defun helm-rg--save-match-line-content-to-file-for-bounce
     (scratch-buf jump-loc maybe-new-file-name)
@@ -1845,13 +1852,15 @@ The buffer has already been advanced to the appropriate line."
       (delete-region (line-beginning-position) (line-end-position))
       (insert match-text))
     ;; If we have changed the file name, we need to rewrite the jump location for this line.
-    (cl-destructuring-bind (&key file line-num match-results) jump-loc
-      (unless (string= file maybe-new-file-name)
-        (let ((new-props
-               (helm-rg--copy-jump-location-and-override jump-loc (list :file maybe-new-file-name)))
-              (inhibit-read-only t))
-          (put-text-property (line-beginning-position) (line-end-position)
-                             helm-rg--jump-location-text-property new-props))))))
+    (pcase-exhaustive jump-loc
+      ((helm-rg-&key :required file)
+       (unless (string= file maybe-new-file-name)
+         (let ((new-props
+                (helm-rg--copy-jump-location-and-override
+                 jump-loc (list :file maybe-new-file-name)))
+               (inhibit-read-only t))
+           (put-text-property (line-beginning-position) (line-end-position)
+                              helm-rg--jump-location-text-property new-props)))))))
 
 (cl-defun helm-rg--iterate-match-entries-for-bounce (&key file-visitor match-visitor end-of-file-fn)
   (goto-char helm-rg--beginning-of-bounce-content-mark)
@@ -1923,25 +1932,26 @@ The buffer has already been advanced to the appropriate line."
                          (funcall file-header-line-visitor file-header-loc))
                        (helm-rg--down-for-bounce))
        :match-visitor (lambda (match-loc)
-                        (cl-destructuring-bind (&key file line-num match-results) match-loc
-                          (re-search-forward
-                           (helm-rg--make-line-number-prefix-regexp-for-bounce line-num))
-                          (let ((line-diff (- line-num cur-line)))
-                            (cl-assert (or (and (= cur-line 1)
-                                                (= line-num 1))
-                                           (> line-diff 0)))
-                            (with-current-buffer scratch-buf
-                              (forward-line line-diff))
-                            (when (and is-matching-file-p
-                                     (if filter-to-match
-                                         (helm-rg--match-entry-equals filter-to-match match-loc)
-                                       t))
-                              (setq did-find-matching-entry-p t)
-                              (funcall match-line-visitor scratch-buf match-loc))
-                            ;; Update the line number in the scratch buffer to the one from this
-                            ;; match line.
-                            (setq cur-line line-num)
-                            (helm-rg--down-for-bounce))))
+                        (pcase-exhaustive match-loc
+                          ((helm-rg-&key :required line-num)
+                           (re-search-forward
+                            (helm-rg--make-line-number-prefix-regexp-for-bounce line-num))
+                           (let ((line-diff (- line-num cur-line)))
+                             (cl-assert (or (and (= cur-line 1)
+                                                 (= line-num 1))
+                                            (> line-diff 0)))
+                             (with-current-buffer scratch-buf
+                               (forward-line line-diff))
+                             (when (and is-matching-file-p
+                                        (if filter-to-match
+                                            (helm-rg--match-entry-equals filter-to-match match-loc)
+                                          t))
+                               (setq did-find-matching-entry-p t)
+                               (funcall match-line-visitor scratch-buf match-loc))
+                             ;; Update the line number in the scratch buffer to the one from this
+                             ;; match line.
+                             (setq cur-line line-num)
+                             (helm-rg--down-for-bounce)))))
        :end-of-file-fn (when finalize-file-buffer-fn
                          (lambda (file-header-loc)
                            (when is-matching-file-p
@@ -1974,15 +1984,16 @@ The buffer has already been advanced to the appropriate line."
 
 (defun helm-rg--reread-entries-from-file-for-bounce (just-this-file-p)
   (let ((filter-to-file-name (when just-this-file-p
-                               (cl-destructuring-bind (&key file line-num match-results)
-                                   (helm-rg--current-jump-location)
-                                 file))))
+                               (pcase-exhaustive (helm-rg--current-jump-location)
+                                 ((helm-rg-&key :required file)
+                                  file)))))
     (helm-rg--apply-matches-with-file-for-bounce
      :file-header-line-visitor #'helm-rg--rewrite-file-header-line-for-bounce
      :match-line-visitor #'helm-rg--rewrite-propertized-match-line-from-file-for-bounce
      :filter-to-file filter-to-file-name)))
 
-(defun helm-rg--validate-file-name-change-and-propertize-for-bounce (orig-file-name)
+(defun helm-rg--validate-file-name-change-and-propertize-for-bounce (_orig-file-name)
+  ;; TODO: do some validation (???)
   (let* ((new-file-name-maybe (buffer-substring (point) (line-end-position)))
          (inhibit-read-only t))
     ;; Rewrite the :file jump location text property with the new file name.
@@ -2016,16 +2027,18 @@ The buffer has already been advanced to the appropriate line."
 
 (defun helm-rg--save-entries-to-file-for-bounce (just-this-file-p)
   (let ((filter-to-file-name (when just-this-file-p
-                               (cl-destructuring-bind (&key file line-num match-results)
-                                   (helm-rg--current-jump-location)
-                                 file)))
+                               (pcase-exhaustive (helm-rg--current-jump-location)
+                                 ((helm-rg-&key :required file)
+                                  file))))
         ;; The content of the file header -- if it is different, we rename the file.
         maybe-new-file-name)
     (helm-rg--apply-matches-with-file-for-bounce
-     :file-header-line-visitor (lambda (file-header-loc)
-                                 (cl-destructuring-bind (&key file) file-header-loc
-                                   (setq maybe-new-file-name
-                                         (helm-rg--validate-file-name-change-and-propertize-for-bounce file))))
+     :file-header-line-visitor
+     (lambda (file-header-loc)
+       (pcase-exhaustive file-header-loc
+         ((helm-rg-&key :required file)
+          (setq maybe-new-file-name
+                (helm-rg--validate-file-name-change-and-propertize-for-bounce file)))))
      :match-line-visitor (lambda (scratch-buf jump-loc)
                            (helm-rg--save-match-line-content-to-file-for-bounce
                             scratch-buf jump-loc maybe-new-file-name))
@@ -2124,16 +2137,18 @@ The buffer has already been advanced to the appropriate line."
   ;; TODO: add useful messaging!
   ;; TODO: visit the right line number too!!! (if on a match line)
   (save-excursion
-    (cl-destructuring-bind (&key file line-num match-results) (helm-rg--current-jump-location)
-      (let ((buf-for-file (find-file-noselect file)))
-        ;; We could have a separate defcustom for this, but I think that's a setting nobody will
-        ;; want to tweak, and if they do, they can override it very easily by making an interactive
-        ;; method and let-binding `helm-rg-display-buffer-alternate-method' before calling this one.
-        (funcall helm-rg-display-buffer-alternate-method buf-for-file)
-        (when line-num
-          (goto-char (point-min))
-          (forward-line (1- line-num)))
-        (recenter)))))
+    (pcase-exhaustive (helm-rg--current-jump-location)
+      ((helm-rg-&key line-num :required file)
+       (let ((buf-for-file (find-file-noselect file)))
+         ;; We could have a separate defcustom for this, but I think that's a setting nobody will
+         ;; want to tweak, and if they do, they can override it very easily by making an interactive
+         ;; method and let-binding `helm-rg-display-buffer-alternate-method' before calling this
+         ;; one.
+         (funcall helm-rg-display-buffer-alternate-method buf-for-file)
+         (when line-num
+           (goto-char (point-min))
+           (forward-line (1- line-num)))
+         (recenter))))))
 
 
 ;; Toggles and settings
@@ -2206,7 +2221,6 @@ The buffer has already been advanced to the appropriate line."
     (define-key map (kbd "M-g") #'helm-rg--set-glob)
     (define-key map (kbd "M-d") #'helm-rg--set-dir)
     (define-key map (kbd "M-c") #'helm-rg--set-case-sensitivity)
-    (define-key map (kbd "M-e") #'helm-rg--edit-results)
     (define-key map (kbd "<right>") #'helm-rg--file-forward)
     (define-key map (kbd "<left>") #'helm-rg--file-backward)
     map)
@@ -2332,7 +2346,7 @@ in some window, select that window, or else display the help buffer with
          (or (get-buffer helm-rg--ripgrep-help-buffer-name)
              (helm-rg--make-help-buffer helm-rg--ripgrep-help-buffer-name))))
     (if pfx (switch-to-buffer filled-out-help-buf)
-      (-if-let ((buf-win (get-buffer-window filled-out-help-buf t)))
+      (if-let* ((buf-win (get-buffer-window filled-out-help-buf t)))
           (select-window buf-win)
         (pop-to-buffer filled-out-help-buf)))))
 

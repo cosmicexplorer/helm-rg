@@ -4,7 +4,8 @@ EMACS=emacs
 
 test: compile-all checkdoc
 	$(EMACS) -Q --batch $(CL) \
-		--eval '(setq byte-compile-warnings (quote (not cl-functions)))' \
+		--eval '(package-initialize)' \
+		--eval '(setq byte-compile-error-on-warn t)' \
 		-l ert -l ../helm-rg.elc -l helm-rg-test.elc \
 		--eval '(ert-run-tests-batch-and-exit $(SELECTOR))'
 
@@ -15,13 +16,12 @@ checkdoc:
 compile-all:
 	$(EMACS) -Q --batch \
 		--eval '(package-initialize)' \
-		--eval '(setq byte-compile-warnings (quote (not cl-functions)))' \
 		--eval '(setq byte-compile-error-on-warn t)' \
 		-l ../helm-rg.el \
 		-f batch-byte-compile ../helm-rg.el helm-rg-test.el
 
 clean:
-	rm -f $(TEST_HTML) *.elc ../*.elc
+	rm -f *.elc ../*.elc
 
 evm:
 	$(MAKE) test EMACS="$(shell evm bin emacs-24.1)" CL="-l cl-lib-0.5.el"
