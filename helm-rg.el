@@ -842,6 +842,7 @@ case-sensitivity.")
   "Alist mapping (sexp -> face) describing how to generate and propertize the argv for ripgrep.")
 
 (defconst helm-rg--helm-buffer-name "*helm-rg*")
+(defconst helm-rg--view-result-buffer-name "*helm-rg-result*")
 (defconst helm-rg--process-name "*helm-rg--rg*")
 (defconst helm-rg--process-buffer-name "*helm-rg--rg-output*")
 
@@ -1209,6 +1210,20 @@ Make a dummy process if the input is empty with a clear message to the user."
                 (cl-incf cur-line lines-diff)
                 (cl-assert (not (eobp)))
                 (helm-rg--convert-lines-matches-to-overlays line-match-results))))))
+
+(defun helm-rg--show-in-buffer-action (_parsed-output)
+  "Show results in a buffer."
+  (let ((results (with-current-buffer (get-buffer helm-rg--helm-buffer-name)
+                   (goto-char (point-min))
+                   (forward-line 1)
+                   (buffer-substring-no-properties (point) (point-max)))))
+    (switch-to-buffer (get-buffer-create helm-rg--view-result-buffer-name))
+    (setq buffer-read-only nil)
+    (erase-buffer)
+    (insert results)
+    (insert "\n")
+    (goto-char 0)
+    (grep-mode)))
 
 (defun helm-rg--async-action (parsed-output &optional highlight-matches)
   "Visit the file at the line and column according to PARSED-OUTPUT.
@@ -2303,7 +2318,9 @@ SCRATCH-BUF has already been advanced to the appropriate line."
     :help-message "FIXME: useful help message!!!"
     ;; TODO: basically all of these functions need to be tested.
     :candidates-process #'helm-rg--make-process
-    :action (helm-make-actions "Visit" #'helm-rg--async-action)
+    :action (helm-make-actions
+             "Visit" #'helm-rg--async-action
+             "Show results in buffer" #'helm-rg--show-in-buffer-action)
     :filter-one-by-one #'helm-rg--parse-process-output
     :display-to-real #'helm-rg--display-to-real
     ;; TODO: add a `defcustom' for this.
