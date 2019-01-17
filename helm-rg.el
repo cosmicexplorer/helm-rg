@@ -2399,5 +2399,13 @@ in some window, select that window, or else display the help buffer with
           (select-window buf-win)
         (pop-to-buffer filled-out-help-buf)))))
 
+;;;###autoload
+(defun helm-rg-from-isearch ()
+  "Invoke `helm-rg' from isearch."
+  (interactive)
+  (let ((input (if isearch-regexp isearch-string (regexp-quote isearch-string))))
+    (isearch-exit)
+    (helm-rg input)))
+
 (provide 'helm-rg)
 ;;; helm-rg.el ends here
