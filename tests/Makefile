@@ -1,5 +1,8 @@
 EMACS=emacs
 
+# TODO: do interactive testing here too (start up an interactive emacs)!
+# TODO: once that is done, invoke EVM here to test against multiple emacs versions!
+
 .PHONY: test
 
 test: compile-all checkdoc
