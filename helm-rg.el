@@ -1121,7 +1121,7 @@ Make a dummy process if the input is empty with a clear message to the user."
   (let* ((default-directory helm-rg--current-dir)
          (input helm-pattern))
     (pcase-exhaustive (helm-rg--validate-or-make-dummy-process input)
-      ((and x (pred processp))
+      ((and (pred processp) x)
        (setq helm-rg--last-argv nil)
        x)
       (`t
