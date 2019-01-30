@@ -13,4 +13,4 @@ env:
 
 script:
   - emacs --version
-  - make clean install-packages test -C tests
+  - make clean install-packages test
