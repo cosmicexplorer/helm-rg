@@ -3,8 +3,17 @@ EMACS:=emacs
 # TODO: do interactive testing here too (start up an interactive emacs)!
 # TODO: once that is done, invoke EVM here to test against multiple emacs versions!
 
-# TODO: maybe add noninteractive testing in a --batch command if this becomes too slow.
-test: compile-all checkdoc
+# TODO: make a `define` for this shared test structure!
+test-noninteractive: compile-all checkdoc
+	$(EMACS) -Q --batch \
+		--eval '(package-initialize)' \
+		-l helm-rg.elc -l tests/helm-rg-test.elc \
+		-l ert -l rx \
+		--eval "(ert (rx bos \"test-helm-rg\"))" \
+		--eval '(kill-emacs 0)'
+	@echo "All tests passed!"
+
+test-interactive: compile-all checkdoc
 	$(EMACS) -Q \
 		--eval '(package-initialize)' \
 		-l helm-rg.elc -l tests/helm-rg-test.elc \
