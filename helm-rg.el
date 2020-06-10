@@ -2357,7 +2357,7 @@ will be split!"
   ;; `helm-grep-ag-class' is provided by `helm' -- I don't know if that identifier is stable but if
   ;; it's not it will error out very quickly (because `helm-make-source' will fail if that symbol
   ;; is removed).
-  (helm-make-source "ripgrep" 'helm-grep-ag-class
+  (helm-make-source "ripgrep" 'helm-source-async
     ;; FIXME: we don't want the header to be hydrated by helm, it's huge and blue and
     ;; unnecessary. Do it ourselves, then we don't have to delete the header in
     ;; `helm-rg--freeze-header-for-bounce'.
