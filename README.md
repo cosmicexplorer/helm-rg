@@ -7,8 +7,6 @@ helm-rg
 
 Search massive codebases extremely fast, using [`ripgrep`](https://github.com/BurntSushi/ripgrep) and [`helm`](https://github.com/emacs-helm/helm). Inspired by [`helm-ag`](https://github.com/syohex/emacs-helm-ag) and [`f3`](https://github.com/cosmicexplorer/f3).
 
-Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used much but seems pretty cool.
-
 # Usage
 
 *See the [`ripgrep` whirlwind tour](https://github.com/BurntSushi/ripgrep#whirlwind-tour) for further information on invoking `ripgrep`.*
@@ -77,6 +75,10 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
     - then you could do an `f3` search, bounce to dired, then immediately `helm-rg` on just the file paths from the `f3` search, *which would be sick*
 - [ ] does ripgrep have any options to traverse the fs in (any type of) sorted order?
     - if so we'll definitely want a `defcustom` on that asap
+
+# Alternatives & Inspiration
+- The library author finds [deadgrep](https://github.com/Wilfred/deadgrep) to have a beautiful interface.
+- Also check out [rg.el](https://github.com/dajva/rg.el).
 
 # License
 
