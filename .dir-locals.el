@@ -1,11 +1,15 @@
 ;;; Directory Local Variables
 ;;; For more information see (info "(emacs) Directory Variables")
 
-((nil
-  (require-final-newline . t)
-  (indent-tabs-mode . nil)
-  (checkdoc-force-docstrings-flag . nil)
-  (fill-column . 100)
-  (highlight-80+-columns . 100))
- (emacs-lisp-mode
-  (sentence-end-double-space . nil)))
+((nil . ((require-final-newline . t)
+         (indent-tabs-mode . nil)
+         (checkdoc-force-docstrings-flag . nil)
+         (fill-column . 100)
+         (highlight-80+-columns . 100)))
+ (emacs-lisp-mode . ((sentence-end-double-space . nil)))
+ (rust-mode . ((comment-start . "/* ")
+               (commend-end . " */")
+               (rust-indent-offset . 2)))
+ (rustic-mode . ((comment-start . "/* ")
+                 (commend-end . " */")
+                 (rustic-indent-offset . 2))))

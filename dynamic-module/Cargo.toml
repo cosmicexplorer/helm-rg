@@ -1,0 +1,30 @@
+[package]
+name = "helm-rg"
+version = "0.0.1"
+authors = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+displaydoc = "0.2"
+lazy_static = "1"
+num_enum = "0.5.1"
+# regex = "1.5.4"
+
+[build-dependencies]
+bindgen = "0.58.1"
+cbindgen = "0.19.0"
+walkdir = "2"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+# Enable debug symbols in the `release` profile: doesn't add a noticeable overhead in size/speed,
+# but enables profiling of optimized builds.
+debug = true
+# Optimise for the speed of our binary, rather than the speed of compilation.
+codegen-units = 1
