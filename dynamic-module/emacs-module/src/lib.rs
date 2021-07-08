@@ -107,6 +107,7 @@ lazy_static! {
   static ref FMT_STR: CString = expose_c_str("%S");
   static ref MESSAGE_NAME: CString = expose_c_str("message");
   static ref FORMAT_NAME: CString = expose_c_str("format");
+  static ref ERROR_NAME: CString = expose_c_str("error");
 }
 
 #[derive(Debug, Display)]
@@ -187,6 +188,18 @@ impl Environment {
     }
   }
 
+  pub fn apply(&mut self, name: &CStr, args: &mut [c_types::Value]) -> c_types::Value {
+    let f = self.0.funcall.unwrap();
+    unsafe {
+      f(
+        &mut **self.0,
+        self.intern(name),
+        args.len() as isize,
+        args.as_mut_ptr(),
+      )
+    }
+  }
+
   pub fn declare_function(
     &mut self,
     f: c_types::Function,
@@ -257,16 +270,24 @@ impl Environment {
     unsafe { f(&mut **self.0, arg) }
   }
 
+  pub fn fmt_sexp(&mut self) -> c_types::Value {
+    self.make_string(FMT_STR.as_c_str())
+  }
+
   pub fn message_sexp(&mut self, arg: emacs_value) -> String {
-    let passthrough_fmt = self.make_string(FMT_STR.as_c_str());
-    let result = self.funcall(MESSAGE_NAME.as_c_str(), [passthrough_fmt, arg]);
+    let fmt = self.fmt_sexp();
+    let result = self.funcall(MESSAGE_NAME.as_c_str(), [fmt, arg]);
     self.extract_string(result)
   }
 
   pub fn format_sexp(&mut self, arg: emacs_value) -> String {
-    let passthrough_fmt = self.make_string(FMT_STR.as_c_str());
-    let result = self.funcall(FORMAT_NAME.as_c_str(), [passthrough_fmt, arg]);
+    let fmt = self.fmt_sexp();
+    let result = self.funcall(FORMAT_NAME.as_c_str(), [fmt, arg]);
     self.extract_string(result)
+  }
+
+  pub fn error<const NARGS: usize>(&mut self, mut args: [c_types::Value; NARGS]) -> c_types::Value {
+    self.apply(ERROR_NAME.as_c_str(), args.as_mut())
   }
 }
 
@@ -345,6 +366,7 @@ impl ViaValue for LispInteger {
   }
 }
 
+#[derive(Clone)]
 pub struct LispString(CString);
 
 impl From<LispString> for String {

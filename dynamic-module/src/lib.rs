@@ -90,7 +90,17 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
     LispInteger(x) => x as usize,
   };
 
-  let regexp = Regex::new(&regexp).unwrap();
+  let regexp = match Regex::new(&regexp) {
+    Ok(r) => r,
+    Err(e) => {
+      let fmt_str =
+        LispString::from("error compiling rust regexp: %s".to_string()).make_value(&mut env);
+      let err_str = LispString::from(format!("{:?}", e))
+        .make_value(&mut env)
+        .into();
+      return env.error([fmt_str.into(), err_str]);
+    }
+  };
   if let Some(m) = regexp.find_at(&string, start) {
     env.make_integer(m.start() as emacs::intmax_t)
   } else {
