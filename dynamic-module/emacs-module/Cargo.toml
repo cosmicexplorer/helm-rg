@@ -1,0 +1,18 @@
+[package]
+name = "emacs-module"
+version = "0.0.1"
+authors = ["Danny McClanahan <1305167+cosmicexplorer@users.noreply.github.com>"]
+edition = "2018"
+license = "GPL-3.0-or-later"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+displaydoc = "0.2"
+lazy_static = "1"
+num_enum = "0.5.1"
+# regex = "1.5.4"
+
+[build-dependencies]
+bindgen = "0.58.1"
+walkdir = "2"
