@@ -38,6 +38,26 @@
 ;; (https://github.com/cosmicexplorer/f3).
 
 
+;; Experimental Backend(s) TODO:
+;; *see this tweet
+;; (https://twitter.com/hipsterelectron/status/1412937050181967872?s=20)*
+
+;; - [ ] create a rust lib which is exposed as a C ABI shared library and
+;; interfaces with the emacs plugin API
+;; (https://www.gnu.org/software/emacs/manual/html_node/elisp/Dynamic-Modules.html)
+;;     - [ ] expose low-level string search methods implemented using the rust
+;; `regex' crate (https://docs.rs/regex/1.5.4/regex/)
+;;     - [ ] expose high-level `try-completion'-like methods
+;; - [ ] expose `try-completion'-based API
+;; - [ ] enable parallelism using elisp threads
+;; (https://www.gnu.org/software/emacs/manual/html_node/elisp/Threads.html)
+;;     - currently the only parallelism is that performed by `rg' itself
+;;         - *which is awesome but not necessarily suited for performing
+;; searches through emacs buffers*
+;;     - [ ] determine whether elisp threads can/should instead be used to wrap
+;; parallelism orchestrated from rust?
+
+
 ;; Usage:
 
 ;; *See the `ripgrep' whirlwind tour
