@@ -85,7 +85,10 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
     .unwrap_or_else(|| LispInteger(0))
   {
     LispInteger(x) if x < 0 => {
-      return env.nil();
+      let fmt_str =
+        LispString::from("invalid negative start offset: %d".to_string()).make_value(&mut env);
+      let x = LispInteger(x).make_value(&mut env);
+      return env.error([fmt_str.into(), x.into()]);
     }
     LispInteger(x) => x as usize,
   };
@@ -94,7 +97,7 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
     Ok(r) => r,
     Err(e) => {
       let fmt_str =
-        LispString::from("error compiling rust regexp: %s".to_string()).make_value(&mut env);
+        LispString::from("failed to compile rust regexp: %s".to_string()).make_value(&mut env);
       let err_str = LispString::from(format!("{:?}", e))
         .make_value(&mut env)
         .into();
