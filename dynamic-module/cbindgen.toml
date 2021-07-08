@@ -1,7 +1,0 @@
-language = "C"
-
-include_version = true
-includes = ["emacs-module.h"]
-no_includes = true
-
-line_length = 100

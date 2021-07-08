@@ -40,11 +40,16 @@
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 #![allow(unsafe_code)]
 
-use emacs_module::{c_types as emacs, expose_c_str, Environment, Runtime};
+use emacs_module::{
+  c_types as emacs, expose_c_str, Environment, LispInteger, LispString, Runtime, StandardProperty,
+  Value, ViaValue,
+};
+
+use regex::Regex;
 
 use std::{
   os::raw::{c_int, c_void},
-  ptr,
+  ptr, slice,
 };
 
 /// *TODO: generate docstring from rust docstring!*
@@ -57,6 +62,40 @@ pub unsafe extern "C" fn helm_rg_string_match(
 ) -> emacs::Value {
   let mut env = Environment::from_ptr(env).unwrap();
   env.make_string(expose_c_str("wow!!!").as_c_str())
+}
+
+/// *TODO: generate docstring from rust docstring!*
+#[no_mangle]
+pub unsafe extern "C" fn helm_rg_string_match_p(
+  env: *mut emacs::Env,
+  nargs: isize,
+  args: *mut emacs::Value,
+  data: *mut c_void,
+) -> emacs::Value {
+  let mut env = Environment::from_ptr(env).unwrap();
+  let args: &mut [emacs::Value] = slice::from_raw_parts_mut(args, nargs as usize);
+  assert!(args.len() >= 2 && args.len() <= 3);
+  assert!(data.is_null());
+
+  let regexp: String = LispString::extract_value(Value::from_ptr(args[0]), &mut env).into();
+  let string: String = LispString::extract_value(Value::from_ptr(args[1]), &mut env).into();
+  let start: usize = match args
+    .get(2)
+    .map(|start| LispInteger::extract_value(Value::from_ptr(*start), &mut env))
+    .unwrap_or_else(|| LispInteger(0))
+  {
+    LispInteger(x) if x < 0 => {
+      return env.nil();
+    }
+    LispInteger(x) => x as usize,
+  };
+
+  let regexp = Regex::new(&regexp).unwrap();
+  if let Some(m) = regexp.find_at(&string, start) {
+    env.make_integer(m.start() as emacs::intmax_t)
+  } else {
+    env.nil()
+  }
 }
 
 /// Initialize module. *See [docs].*
@@ -74,10 +113,38 @@ pub unsafe extern "C" fn emacs_module_init(runtime: *mut emacs::Runtime) -> c_in
   env.declare_function(
     Some(helm_rg_string_match),
     expose_c_str("helm-rg-string-match").as_c_str(),
-    Some(expose_c_str("See documentation for `string-match'.").as_c_str()),
+    Some(
+      expose_c_str(&format!(
+        "{}\n\n{}",
+        "See documentation for `string-match'.", r"\(fn (REGEXP STRING &optional START))"
+      ))
+      .as_c_str(),
+    ),
     2,
     3,
     ptr::null_mut(),
+    &[],
+  );
+
+  let t = env.t();
+  env.declare_function(
+    Some(helm_rg_string_match_p),
+    expose_c_str("helm-rg-string-match-p").as_c_str(),
+    Some(
+      expose_c_str(&format!(
+        "{}\n\n{}",
+        "See documentation for `string-match-p'.", r"\(fn (REGEXP STRING &optional START))",
+      ))
+      .as_c_str(),
+    ),
+    2,
+    3,
+    ptr::null_mut(),
+    /* &[
+      (StandardProperty::Pure, t),
+      (StandardProperty::SideEffectFree, t),
+    ], */
+    &[],
   );
 
   0

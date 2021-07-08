@@ -9,4 +9,4 @@ emacs \
   -Q \
   --batch \
   --eval '(module-load (expand-file-name "target/debug/libhelm_rg.so"))' \
-  --eval '(message "%s" (helm-rg-string-match 1 2))'
+  --eval '(message "%s" (helm-rg-string-match-p "df" "asdf"))'

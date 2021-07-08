@@ -10,7 +10,7 @@ publish = false
 
 [dependencies]
 emacs-module = { path = "./emacs-module/" }
-# regex = "1.5.4"
+regex = "1.5.4"
 
 [lib]
 crate-type = ["cdylib"]
