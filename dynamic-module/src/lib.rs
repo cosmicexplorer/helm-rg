@@ -46,20 +46,23 @@ use emacs_module::{
 };
 
 use lazy_static::lazy_static;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use regex::Regex;
 
 use std::{
+  collections::HashMap,
   os::raw::{c_int, c_void},
   ptr, slice,
+  sync::Arc,
 };
 
 /// NB: The length of the returned vector is equal to the number of capture locations! If 0,
 /// no match!
-fn string_match_helper(regexp: Regex, string: String, start: usize) -> Vec<(usize, usize)> {
+fn string_match_helper(regexp: &Regex, string: &str, start: usize) -> Vec<(usize, usize)> {
   let mut locs = regexp.capture_locations();
 
   let mut captures: Vec<(usize, usize)> = Vec::new();
-  if regexp.captures_read_at(&mut locs, &string, start).is_some() {
+  if regexp.captures_read_at(&mut locs, string, start).is_some() {
     for i in 0..locs.len() {
       captures.push(locs.get(i).unwrap());
     }
@@ -70,6 +73,11 @@ fn string_match_helper(regexp: Regex, string: String, start: usize) -> Vec<(usiz
 enum MatchDataBehavior {
   Ignore,
   SetMatchData,
+}
+
+lazy_static! {
+  static ref REGEXP_CACHE: Arc<RwLock<HashMap<String, Arc<Regex>>>> =
+    Arc::new(RwLock::new(HashMap::new()));
 }
 
 fn do_string_match(
@@ -96,21 +104,32 @@ fn do_string_match(
   };
 
   /* (2) Compile the regexp string into a rust regex. */
-  let regexp = match Regex::new(&regexp) {
-    Ok(r) => r,
-    Err(e) => {
-      let reason_str =
-        LispString::from("failed to compile rust regexp".to_string()).make_value(env);
-      let err_str = LispString::from(format!("{:?}", e)).make_value(env);
-      return env.signal(
-        HELM_RG_NATIVE_ERROR.clone(),
-        [reason_str.into(), err_str.into()],
-      );
+  let regexp: Arc<Regex> = {
+    let cache_ro = REGEXP_CACHE.upgradable_read();
+    if let Some(rx) = cache_ro.get(&string) {
+      Arc::clone(rx)
+    } else {
+      match Regex::new(&regexp) {
+        Ok(rx) => {
+          let mut cache_rw = RwLockUpgradableReadGuard::upgrade(cache_ro);
+          cache_rw.insert(string.clone(), Arc::new(rx));
+          Arc::clone(cache_rw.get(&string).unwrap())
+        }
+        Err(e) => {
+          let reason_str =
+            LispString::from("failed to compile rust regexp".to_string()).make_value(env);
+          let err_str = LispString::from(format!("{:?}", e)).make_value(env);
+          return env.signal(
+            HELM_RG_NATIVE_ERROR.clone(),
+            [reason_str.into(), err_str.into()],
+          );
+        }
+      }
     }
   };
 
   /* (3) If there was no match, return nil. */
-  let captured = string_match_helper(regexp, string, start);
+  let captured = string_match_helper(&regexp, &string, start);
   if captured.is_empty() {
     return env.nil();
   }
