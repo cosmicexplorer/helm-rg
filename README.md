@@ -10,8 +10,8 @@ Search massive codebases extremely fast, using [`ripgrep`](https://github.com/Bu
 # Experimental Backend(s) TODO
 *see [this tweet](https://twitter.com/hipsterelectron/status/1412937050181967872?s=20)*
 
-- [ ] create a rust lib which is exposed as a C ABI shared library and interfaces with the [emacs plugin API](https://www.gnu.org/software/emacs/manual/html_node/elisp/Dynamic-Modules.html)
-    - [ ] expose low-level string search methods implemented using the [rust `regex` crate](https://docs.rs/regex/1.5.4/regex/)
+- [x] create a rust lib which is exposed as a C ABI shared library and interfaces with the [emacs plugin API](https://www.gnu.org/software/emacs/manual/html_node/elisp/Dynamic-Modules.html)
+    - [x] expose low-level string search methods implemented using the [rust `regex` crate](https://docs.rs/regex/1.5.4/regex/)
     - [ ] expose high-level `try-completion`-like methods
 - [ ] expose `try-completion`-based API
 - [ ] enable parallelism using [elisp threads](https://www.gnu.org/software/emacs/manual/html_node/elisp/Threads.html)
