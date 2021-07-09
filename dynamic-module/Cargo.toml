@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 emacs-module = { path = "./emacs-module/" }
+lazy_static = "1"
 regex = "1.5.4"
 
 [lib]

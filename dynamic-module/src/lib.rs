@@ -42,9 +42,10 @@
 
 use emacs_module::{
   c_types as emacs, expose_c_str, Environment, LispInteger, LispString, LispSymbol, Runtime,
-  StandardProperty, Value, ViaValue,
+  StandardProperty, ViaValue,
 };
 
+use lazy_static::lazy_static;
 use regex::Regex;
 
 use std::{
@@ -57,15 +58,13 @@ use std::{
 fn string_match_helper(regexp: Regex, string: String, start: usize) -> Vec<(usize, usize)> {
   let mut locs = regexp.capture_locations();
 
-  if let Some(m) = regexp.captures_read_at(&mut locs, &string, start) {
-    let mut cur: Vec<(usize, usize)> = Vec::new();
+  let mut captures: Vec<(usize, usize)> = Vec::new();
+  if regexp.captures_read_at(&mut locs, &string, start).is_some() {
     for i in 0..locs.len() {
-      cur.push(locs.get(i).unwrap());
+      captures.push(locs.get(i).unwrap());
     }
-    cur
-  } else {
-    Vec::new()
   }
+  captures
 }
 
 enum MatchDataBehavior {
@@ -81,10 +80,10 @@ fn do_string_match(
   behavior: MatchDataBehavior,
 ) -> emacs::Value {
   /* (1) Convert the lisp values into rust values. */
-  let regexp: String = LispString::extract_value(unsafe { Value::from_ptr(regexp) }, env).into();
-  let string: String = LispString::extract_value(unsafe { Value::from_ptr(string) }, env).into();
+  let regexp: String = LispString::extract_value(regexp.into(), env).into();
+  let string: String = LispString::extract_value(string.into(), env).into();
   let start: usize = match start
-    .map(|start| LispInteger::extract_value(unsafe { Value::from_ptr(start) }, env))
+    .map(|start| LispInteger::extract_value(start.into(), env))
     .unwrap_or(LispInteger(0))
   {
     LispInteger(x) if x < 0 => {
@@ -100,11 +99,13 @@ fn do_string_match(
   let regexp = match Regex::new(&regexp) {
     Ok(r) => r,
     Err(e) => {
-      let signal_sym = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
       let reason_str =
         LispString::from("failed to compile rust regexp".to_string()).make_value(env);
       let err_str = LispString::from(format!("{:?}", e)).make_value(env);
-      return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
+      return env.signal(
+        HELM_RG_NATIVE_ERROR.clone(),
+        [reason_str.into(), err_str.into()],
+      );
     }
   };
 
@@ -171,6 +172,11 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
   )
 }
 
+lazy_static! {
+  static ref HELM_RG_NATIVE_ERROR: LispSymbol =
+    LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
+}
+
 /// Initialize module. *See [docs].*
 ///
 /// [docs]: https://www.gnu.org/software/emacs/manual/html_node/elisp/Module-Initialization.html
@@ -183,9 +189,8 @@ pub unsafe extern "C" fn emacs_module_init(runtime: *mut emacs::Runtime) -> c_in
     }
   };
 
-  let error_symbol = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
   let error_message = LispString(expose_c_str("error occured in native module"));
-  env.declare_signal(error_symbol, error_message, None);
+  env.declare_signal(HELM_RG_NATIVE_ERROR.clone(), error_message, None);
 
   env.declare_function(
     Some(helm_rg_string_match),
@@ -193,7 +198,7 @@ pub unsafe extern "C" fn emacs_module_init(runtime: *mut emacs::Runtime) -> c_in
     Some(
       expose_c_str(&format!(
         "{}\n\n{}",
-        "See documentation for `string-match'.", r"\(fn (REGEXP STRING &optional START))"
+        "See documentation for `string-match'.", r"\(fn REGEXP STRING &optional START)"
       ))
       .as_c_str(),
     ),
@@ -210,18 +215,17 @@ pub unsafe extern "C" fn emacs_module_init(runtime: *mut emacs::Runtime) -> c_in
     Some(
       expose_c_str(&format!(
         "{}\n\n{}",
-        "See documentation for `string-match-p'.", r"\(fn (REGEXP STRING &optional START))",
+        "See documentation for `string-match-p'.", r"\(fn REGEXP STRING &optional START)",
       ))
       .as_c_str(),
     ),
     2,
     3,
     ptr::null_mut(),
-    /* &[
+    &[
       (StandardProperty::Pure, t),
       (StandardProperty::SideEffectFree, t),
-    ], */
-    &[],
+    ],
   );
 
   0

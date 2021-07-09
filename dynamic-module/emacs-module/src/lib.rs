@@ -46,15 +46,14 @@ use emacs_module::*;
 use displaydoc::Display;
 use lazy_static::lazy_static;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use parking_lot::RwLock;
+/* use parking_lot::RwLock; */
 
 use std::{
   ffi::{CStr, CString},
   mem::{self, ManuallyDrop},
-  ops::{Deref, DerefMut},
-  os::raw::{c_char, c_int, c_void},
+  os::raw::{c_int, c_void},
   ptr,
-  sync::Arc,
+  /* sync::Arc, */
 };
 
 /// Necessary for the emacs plugin framework. *See [docs].*
@@ -78,17 +77,17 @@ pub struct Runtime(ManuallyDrop<Box<c_types::Runtime>>);
 impl Runtime {
   /// Recommended check in "Compatibility verification" of
   /// <https://www.gnu.org/software/emacs/manual/html_node/elisp/Module-Initialization.html>.
-  pub unsafe fn from_ptr(runtime: *mut c_types::Runtime) -> Result<Self, HelmRgInitError> {
-    let boxed = Box::from_raw(runtime);
-    if boxed.size < mem::size_of_val(&*runtime) as isize {
+  pub fn from_ptr(runtime: *mut c_types::Runtime) -> Result<Self, HelmRgInitError> {
+    let runtime = unsafe { Box::from_raw(runtime) };
+    if runtime.size < mem::size_of_val(&runtime) as isize {
       return Err(HelmRgInitError::InvalidEmacsRuntime);
     }
-    Ok(Self(ManuallyDrop::new(boxed)))
+    Ok(Self(ManuallyDrop::new(runtime)))
   }
 
   pub fn get_environment(&mut self) -> Result<Environment, HelmRgInitError> {
     let f = self.0.get_environment.unwrap();
-    unsafe { Environment::from_ptr(f(&mut **self.0)) }
+    Environment::from_ptr(unsafe { f(&mut **self.0) })
   }
 }
 
@@ -101,7 +100,7 @@ pub fn expose_c_str(s: &str) -> CString {
 
 lazy_static! {
   static ref DEFALIAS_NAME: CString = expose_c_str("defalias");
-  static ref PUT_NAME: CString = expose_c_str("defalias");
+  static ref PUT_NAME: CString = expose_c_str("put");
   static ref NIL_NAME: CString = expose_c_str("nil");
   static ref T_NAME: CString = expose_c_str("t");
   static ref FMT_STR: CString = expose_c_str("%S");
@@ -143,12 +142,12 @@ pub struct Environment(ManuallyDrop<Box<c_types::Env>>);
 impl Environment {
   /// Recommended check in "Compatibility verification" of
   /// <https://www.gnu.org/software/emacs/manual/html_node/elisp/Module-Initialization.html>.
-  pub unsafe fn from_ptr(env: *mut c_types::Env) -> Result<Self, HelmRgInitError> {
-    let boxed = Box::from_raw(env);
-    if boxed.size < mem::size_of_val(&*env) as isize {
+  pub fn from_ptr(env: *mut c_types::Env) -> Result<Self, HelmRgInitError> {
+    let env = unsafe { Box::from_raw(env) };
+    if env.size < mem::size_of_val(&env) as isize {
       return Err(HelmRgInitError::InvalidEmacsModuleAPI);
     }
-    Ok(Self(ManuallyDrop::new(boxed)))
+    Ok(Self(ManuallyDrop::new(env)))
   }
 
   pub fn make_function(
@@ -252,8 +251,8 @@ impl Environment {
     data: [c_types::Value; NDATA],
   ) -> c_types::Value {
     let error_symbol: Value = error_symbol.make_value(self);
-    let data: Value = unsafe { Value::from_ptr(self.list(data)) };
-    self.funcall(&SIGNAL_NAME, [error_symbol.into(), data.into()])
+    let data = self.list(data);
+    self.funcall(&SIGNAL_NAME, [error_symbol.into(), data])
   }
 
   pub fn make_string(&mut self, s: &CStr) -> c_types::Value {
@@ -352,9 +351,9 @@ impl Environment {
 
 pub struct Value(ManuallyDrop<Box<c_types::ValueStruct>>);
 
-impl Value {
-  pub unsafe fn from_ptr(value: c_types::Value) -> Self {
-    Self(ManuallyDrop::new(Box::from_raw(value)))
+impl From<c_types::Value> for Value {
+  fn from(value: c_types::Value) -> Self {
+    Self(ManuallyDrop::new(unsafe { Box::from_raw(value) }))
   }
 }
 
@@ -397,8 +396,8 @@ impl From<LispBoolean> for bool {
 impl ViaValue for LispBoolean {
   fn make_value(self, env: &mut Environment) -> Value {
     match self {
-      Self::Nil => unsafe { Value::from_ptr(env.nil()) },
-      Self::T => unsafe { Value::from_ptr(env.t()) },
+      Self::Nil => env.nil().into(),
+      Self::T => env.t().into(),
     }
   }
   fn extract_value(value: Value, env: &mut Environment) -> Self {
@@ -420,7 +419,7 @@ pub struct LispInteger(pub c_types::intmax_t);
 
 impl ViaValue for LispInteger {
   fn make_value(self, env: &mut Environment) -> Value {
-    unsafe { Value::from_ptr(env.make_integer(self.0)) }
+    env.make_integer(self.0).into()
   }
   fn extract_value(value: Value, env: &mut Environment) -> Self {
     Self(env.extract_integer(value.into()))
@@ -456,22 +455,24 @@ impl From<String> for LispString {
 
 impl ViaValue for LispString {
   fn make_value(self, env: &mut Environment) -> Value {
-    unsafe { Value::from_ptr(env.make_string(self.0.as_c_str())) }
+    env.make_string(self.0.as_c_str()).into()
   }
   fn extract_value(value: Value, env: &mut Environment) -> Self {
     Self(CString::new(env.extract_string(value.into())).unwrap())
   }
 }
 
+/// This currently always refers to an interned symbol. See [Self::make_value].
 #[derive(Clone, Debug)]
 pub struct LispSymbol(pub LispString);
 
 impl ViaValue for LispSymbol {
   fn make_value(self, env: &mut Environment) -> Value {
-    unsafe { Value::from_ptr(env.intern(self.0 .0.as_c_str())) }
+    /* TODO: consider using `make-symbol' instead of `intern'! */
+    env.intern(self.0 .0.as_c_str()).into()
   }
   fn extract_value(value: Value, env: &mut Environment) -> Self {
-    let symbol_name: Value = unsafe { Value::from_ptr(env.symbol_name(value.into())) };
+    let symbol_name: Value = env.symbol_name(value.into()).into();
     let lisp_string = LispString::extract_value(symbol_name, env);
     Self(lisp_string)
   }
