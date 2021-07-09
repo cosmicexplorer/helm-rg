@@ -108,6 +108,10 @@ lazy_static! {
   static ref MESSAGE_NAME: CString = expose_c_str("message");
   static ref FORMAT_NAME: CString = expose_c_str("format");
   static ref ERROR_NAME: CString = expose_c_str("error");
+  static ref DEFINE_ERROR_NAME: CString = expose_c_str("define-error");
+  static ref SIGNAL_NAME: CString = expose_c_str("signal");
+  static ref SYMBOL_NAME_NAME: CString = expose_c_str("symbol-name");
+  static ref LIST_NAME: CString = expose_c_str("list");
 }
 
 #[derive(Debug, Display)]
@@ -219,9 +223,41 @@ impl Environment {
     }
   }
 
+  pub fn declare_signal(&mut self, name: LispSymbol, message: LispString, parent: Option<Value>) {
+    let name = name.make_value(self);
+    let message = message.make_value(self);
+
+    if let Some(value) = parent {
+      self.funcall(
+        &DEFINE_ERROR_NAME,
+        [name.into(), message.into(), value.into()],
+      );
+    } else {
+      self.funcall(&DEFINE_ERROR_NAME, [name.into(), message.into()]);
+    }
+  }
+
+  pub fn list<const NDATA: usize>(&mut self, data: [c_types::Value; NDATA]) -> c_types::Value {
+    self.funcall(&LIST_NAME, data)
+  }
+
+  pub fn signal<const NDATA: usize>(
+    &mut self,
+    error_symbol: LispSymbol,
+    data: [c_types::Value; NDATA],
+  ) -> c_types::Value {
+    let error_symbol: Value = error_symbol.make_value(self);
+    let data: Value = unsafe { Value::from_ptr(self.list(data)) };
+    self.funcall(&SIGNAL_NAME, [error_symbol.into(), data.into()])
+  }
+
   pub fn make_string(&mut self, s: &CStr) -> c_types::Value {
     let f = self.0.make_string.unwrap();
     unsafe { f(&mut **self.0, s.as_ptr(), s.to_bytes().len() as isize) }
+  }
+
+  pub fn symbol_name(&mut self, arg: c_types::Value) -> c_types::Value {
+    self.funcall(&SYMBOL_NAME_NAME, [arg])
   }
 
   pub fn extract_string(&mut self, arg: c_types::Value) -> String {
@@ -310,6 +346,7 @@ pub trait ViaValue {
   fn extract_value(value: Value, env: &mut Environment) -> Self;
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum LispBoolean {
   Nil,
   T,
@@ -355,6 +392,7 @@ impl ViaValue for LispBoolean {
   }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct LispInteger(pub c_types::intmax_t);
 
 impl ViaValue for LispInteger {
@@ -366,8 +404,20 @@ impl ViaValue for LispInteger {
   }
 }
 
-#[derive(Clone)]
-pub struct LispString(CString);
+#[derive(Clone, Debug)]
+pub struct LispString(pub CString);
+
+impl From<LispString> for CString {
+  fn from(s: LispString) -> CString {
+    s.0
+  }
+}
+
+impl From<CString> for LispString {
+  fn from(s: CString) -> LispString {
+    Self(s)
+  }
+}
 
 impl From<LispString> for String {
   fn from(s: LispString) -> String {
@@ -387,6 +437,20 @@ impl ViaValue for LispString {
   }
   fn extract_value(value: Value, env: &mut Environment) -> Self {
     Self(CString::new(env.extract_string(value.into())).unwrap())
+  }
+}
+
+#[derive(Clone, Debug)]
+pub struct LispSymbol(pub LispString);
+
+impl ViaValue for LispSymbol {
+  fn make_value(self, env: &mut Environment) -> Value {
+    unsafe { Value::from_ptr(env.intern(self.0 .0.as_c_str())) }
+  }
+  fn extract_value(value: Value, env: &mut Environment) -> Self {
+    let symbol_name: Value = unsafe { Value::from_ptr(env.symbol_name(value.into())) };
+    let lisp_string = LispString::extract_value(symbol_name, env);
+    Self(lisp_string)
   }
 }
 

@@ -41,8 +41,8 @@
 #![allow(unsafe_code)]
 
 use emacs_module::{
-  c_types as emacs, expose_c_str, Environment, LispInteger, LispString, Runtime, StandardProperty,
-  Value, ViaValue,
+  c_types as emacs, expose_c_str, Environment, LispInteger, LispString, LispSymbol, Runtime,
+  StandardProperty, Value, ViaValue,
 };
 
 use regex::Regex;
@@ -96,12 +96,11 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
   let regexp = match Regex::new(&regexp) {
     Ok(r) => r,
     Err(e) => {
-      let fmt_str =
-        LispString::from("failed to compile rust regexp: %s".to_string()).make_value(&mut env);
-      let err_str = LispString::from(format!("{:?}", e))
-        .make_value(&mut env)
-        .into();
-      return env.error([fmt_str.into(), err_str]);
+      let signal_sym = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
+      let reason_str =
+        LispString::from("failed to compile rust regexp".to_string()).make_value(&mut env);
+      let err_str = LispString::from(format!("{:?}", e)).make_value(&mut env);
+      return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
     }
   };
   if let Some(m) = regexp.find_at(&string, start) {
@@ -122,6 +121,10 @@ pub unsafe extern "C" fn emacs_module_init(runtime: *mut emacs::Runtime) -> c_in
       return e.into();
     }
   };
+
+  let error_symbol = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
+  let error_message = LispString(expose_c_str("error occured in native module"));
+  env.declare_signal(error_symbol, error_message, None);
 
   env.declare_function(
     Some(helm_rg_string_match),
