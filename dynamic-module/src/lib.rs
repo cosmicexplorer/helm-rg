@@ -52,11 +52,9 @@ use std::{
   ptr, slice,
 };
 
-fn helm_rg_string_match_helper(
-  regexp: Regex,
-  string: String,
-  mut start: usize,
-) -> Vec<(usize, usize)> {
+/// NB: The length of the returned vector is equal to the number of capture locations! If 0,
+/// no match!
+fn string_match_helper(regexp: Regex, string: String, start: usize) -> Vec<(usize, usize)> {
   let mut locs = regexp.capture_locations();
 
   if let Some(m) = regexp.captures_read_at(&mut locs, &string, start) {
@@ -68,6 +66,65 @@ fn helm_rg_string_match_helper(
   } else {
     Vec::new()
   }
+}
+
+enum MatchDataBehavior {
+  Ignore,
+  SetMatchData,
+}
+
+fn do_string_match(
+  env: &mut Environment,
+  regexp: emacs::Value,
+  string: emacs::Value,
+  start: Option<emacs::Value>,
+  behavior: MatchDataBehavior,
+) -> emacs::Value {
+  /* (1) Convert the lisp values into rust values. */
+  let regexp: String = LispString::extract_value(unsafe { Value::from_ptr(regexp) }, env).into();
+  let string: String = LispString::extract_value(unsafe { Value::from_ptr(string) }, env).into();
+  let start: usize = match start
+    .map(|start| LispInteger::extract_value(unsafe { Value::from_ptr(start) }, env))
+    .unwrap_or(LispInteger(0))
+  {
+    LispInteger(x) if x < 0 => {
+      let fmt_str =
+        LispString::from("invalid negative start offset: %d".to_string()).make_value(env);
+      let x = LispInteger(x).make_value(env);
+      return env.error([fmt_str.into(), x.into()]);
+    }
+    LispInteger(x) => x as usize,
+  };
+
+  /* (2) Compile the regexp string into a rust regex. */
+  let regexp = match Regex::new(&regexp) {
+    Ok(r) => r,
+    Err(e) => {
+      let signal_sym = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
+      let reason_str =
+        LispString::from("failed to compile rust regexp".to_string()).make_value(env);
+      let err_str = LispString::from(format!("{:?}", e)).make_value(env);
+      return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
+    }
+  };
+
+  /* (3) If there was no match, return nil. */
+  let captured = string_match_helper(regexp, string, start);
+  if captured.is_empty() {
+    return env.nil();
+  }
+
+  /* (4) If specified, set the match data. */
+  match behavior {
+    MatchDataBehavior::SetMatchData => {
+      env.set_match_data(&captured);
+    }
+    _ => (),
+  }
+
+  /* (5) Return the start of the leftmost match. */
+  let (leftmost_start, _): (usize, usize) = captured[0];
+  env.make_integer(leftmost_start as emacs::intmax_t)
 }
 
 /// *TODO: generate docstring from rust docstring!*
@@ -83,45 +140,13 @@ pub unsafe extern "C" fn helm_rg_string_match(
   assert!(args.len() >= 2 && args.len() <= 3);
   assert!(data.is_null());
 
-  let regexp: String = LispString::extract_value(Value::from_ptr(args[0]), &mut env).into();
-  let string: String = LispString::extract_value(Value::from_ptr(args[1]), &mut env).into();
-  let start: usize = match args
-    .get(2)
-    .map(|start| LispInteger::extract_value(Value::from_ptr(*start), &mut env))
-    .unwrap_or(LispInteger(0))
-  {
-    LispInteger(x) if x < 0 => {
-      let fmt_str =
-        LispString::from("invalid negative start offset: %d".to_string()).make_value(&mut env);
-      let x = LispInteger(x).make_value(&mut env);
-      return env.error([fmt_str.into(), x.into()]);
-    }
-    LispInteger(x) => x as usize,
-  };
-
-  let regexp = match Regex::new(&regexp) {
-    Ok(r) => r,
-    Err(e) => {
-      let signal_sym = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
-      let reason_str =
-        LispString::from("failed to compile rust regexp".to_string()).make_value(&mut env);
-      let err_str = LispString::from(format!("{:?}", e)).make_value(&mut env);
-      return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
-    }
-  };
-
-  let captured = helm_rg_string_match_helper(regexp, string, start);
-  if captured.is_empty() {
-    return env.nil();
-  }
-
-  let (leftmost_start, _): (usize, usize) = captured[0];
-  env.set_match_data(&captured);
-  env.make_integer(leftmost_start as emacs::intmax_t)
-}
-
-fn helm_rg_string_match_p_helper(regexp: Regex, string: String, start: usize) -> Option<usize> {
-  regexp.find_at(&string, start).map(|m| m.start())
+  do_string_match(
+    &mut env,
+    args[0],
+    args[1],
+    args.get(2).map(|x| *x),
+    MatchDataBehavior::SetMatchData,
+  )
 }
 
 /// *TODO: generate docstring from rust docstring!*
@@ -137,38 +162,13 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
   assert!(args.len() >= 2 && args.len() <= 3);
   assert!(data.is_null());
 
-  let regexp: String = LispString::extract_value(Value::from_ptr(args[0]), &mut env).into();
-  let string: String = LispString::extract_value(Value::from_ptr(args[1]), &mut env).into();
-  let start: usize = match args
-    .get(2)
-    .map(|start| LispInteger::extract_value(Value::from_ptr(*start), &mut env))
-    .unwrap_or(LispInteger(0))
-  {
-    LispInteger(x) if x < 0 => {
-      let fmt_str =
-        LispString::from("invalid negative start offset: %d".to_string()).make_value(&mut env);
-      let x = LispInteger(x).make_value(&mut env);
-      return env.error([fmt_str.into(), x.into()]);
-    }
-    LispInteger(x) => x as usize,
-  };
-
-  let regexp = match Regex::new(&regexp) {
-    Ok(r) => r,
-    Err(e) => {
-      let signal_sym = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
-      let reason_str =
-        LispString::from("failed to compile rust regexp".to_string()).make_value(&mut env);
-      let err_str = LispString::from(format!("{:?}", e)).make_value(&mut env);
-      return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
-    }
-  };
-
-  if let Some(found_start) = helm_rg_string_match_p_helper(regexp, string, start) {
-    env.make_integer(found_start as emacs::intmax_t)
-  } else {
-    env.nil()
-  }
+  do_string_match(
+    &mut env,
+    args[0],
+    args[1],
+    args.get(2).map(|x| *x),
+    MatchDataBehavior::Ignore,
+  )
 }
 
 /// Initialize module. *See [docs].*
