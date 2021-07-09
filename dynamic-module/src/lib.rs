@@ -52,21 +52,27 @@ use std::{
   ptr, slice,
 };
 
-/// *TODO: generate docstring from rust docstring!*
-#[no_mangle]
-pub unsafe extern "C" fn helm_rg_string_match(
-  env: *mut emacs::Env,
-  _nargs: isize,
-  _args: *mut emacs::Value,
-  _data: *mut c_void,
-) -> emacs::Value {
-  let mut env = Environment::from_ptr(env).unwrap();
-  env.make_string(expose_c_str("wow!!!").as_c_str())
+fn helm_rg_string_match_helper(
+  regexp: Regex,
+  string: String,
+  mut start: usize,
+) -> Vec<(usize, usize)> {
+  let mut locs = regexp.capture_locations();
+
+  if let Some(m) = regexp.captures_read_at(&mut locs, &string, start) {
+    let mut cur: Vec<(usize, usize)> = Vec::new();
+    for i in 0..locs.len() {
+      cur.push(locs.get(i).unwrap());
+    }
+    cur
+  } else {
+    Vec::new()
+  }
 }
 
 /// *TODO: generate docstring from rust docstring!*
 #[no_mangle]
-pub unsafe extern "C" fn helm_rg_string_match_p(
+pub unsafe extern "C" fn helm_rg_string_match(
   env: *mut emacs::Env,
   nargs: isize,
   args: *mut emacs::Value,
@@ -82,7 +88,7 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
   let start: usize = match args
     .get(2)
     .map(|start| LispInteger::extract_value(Value::from_ptr(*start), &mut env))
-    .unwrap_or_else(|| LispInteger(0))
+    .unwrap_or(LispInteger(0))
   {
     LispInteger(x) if x < 0 => {
       let fmt_str =
@@ -103,8 +109,63 @@ pub unsafe extern "C" fn helm_rg_string_match_p(
       return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
     }
   };
-  if let Some(m) = regexp.find_at(&string, start) {
-    env.make_integer(m.start() as emacs::intmax_t)
+
+  let captured = helm_rg_string_match_helper(regexp, string, start);
+  if captured.is_empty() {
+    return env.nil();
+  }
+
+  let (leftmost_start, _): (usize, usize) = captured[0];
+  env.set_match_data(&captured);
+  env.make_integer(leftmost_start as emacs::intmax_t)
+}
+
+fn helm_rg_string_match_p_helper(regexp: Regex, string: String, start: usize) -> Option<usize> {
+  regexp.find_at(&string, start).map(|m| m.start())
+}
+
+/// *TODO: generate docstring from rust docstring!*
+#[no_mangle]
+pub unsafe extern "C" fn helm_rg_string_match_p(
+  env: *mut emacs::Env,
+  nargs: isize,
+  args: *mut emacs::Value,
+  data: *mut c_void,
+) -> emacs::Value {
+  let mut env = Environment::from_ptr(env).unwrap();
+  let args: &mut [emacs::Value] = slice::from_raw_parts_mut(args, nargs as usize);
+  assert!(args.len() >= 2 && args.len() <= 3);
+  assert!(data.is_null());
+
+  let regexp: String = LispString::extract_value(Value::from_ptr(args[0]), &mut env).into();
+  let string: String = LispString::extract_value(Value::from_ptr(args[1]), &mut env).into();
+  let start: usize = match args
+    .get(2)
+    .map(|start| LispInteger::extract_value(Value::from_ptr(*start), &mut env))
+    .unwrap_or(LispInteger(0))
+  {
+    LispInteger(x) if x < 0 => {
+      let fmt_str =
+        LispString::from("invalid negative start offset: %d".to_string()).make_value(&mut env);
+      let x = LispInteger(x).make_value(&mut env);
+      return env.error([fmt_str.into(), x.into()]);
+    }
+    LispInteger(x) => x as usize,
+  };
+
+  let regexp = match Regex::new(&regexp) {
+    Ok(r) => r,
+    Err(e) => {
+      let signal_sym = LispSymbol(LispString(expose_c_str("helm-rg-native-error")));
+      let reason_str =
+        LispString::from("failed to compile rust regexp".to_string()).make_value(&mut env);
+      let err_str = LispString::from(format!("{:?}", e)).make_value(&mut env);
+      return env.signal(signal_sym, [reason_str.into(), err_str.into()]);
+    }
+  };
+
+  if let Some(found_start) = helm_rg_string_match_p_helper(regexp, string, start) {
+    env.make_integer(found_start as emacs::intmax_t)
   } else {
     env.nil()
   }

@@ -112,6 +112,7 @@ lazy_static! {
   static ref SIGNAL_NAME: CString = expose_c_str("signal");
   static ref SYMBOL_NAME_NAME: CString = expose_c_str("symbol-name");
   static ref LIST_NAME: CString = expose_c_str("list");
+  static ref SET_MATCH_DATA_NAME: CString = expose_c_str("set-match-data");
 }
 
 #[derive(Debug, Display)]
@@ -241,6 +242,10 @@ impl Environment {
     self.funcall(&LIST_NAME, data)
   }
 
+  pub fn list_many(&mut self, data: &mut [c_types::Value]) -> c_types::Value {
+    self.apply(&LIST_NAME, data)
+  }
+
   pub fn signal<const NDATA: usize>(
     &mut self,
     error_symbol: LispSymbol,
@@ -324,6 +329,24 @@ impl Environment {
 
   pub fn error<const NARGS: usize>(&mut self, mut args: [c_types::Value; NARGS]) -> c_types::Value {
     self.apply(ERROR_NAME.as_c_str(), args.as_mut())
+  }
+
+  pub fn set_match_data(&mut self, captures: &[(usize, usize)]) {
+    let mut all_matches: Vec<c_types::Value> = Vec::new();
+    for (start, end) in captures.iter() {
+      all_matches.push(
+        LispInteger(*start as c_types::intmax_t)
+          .make_value(self)
+          .into(),
+      );
+      all_matches.push(
+        LispInteger(*end as c_types::intmax_t)
+          .make_value(self)
+          .into(),
+      );
+    }
+    let data = self.list_many(all_matches.as_mut());
+    self.funcall(&SET_MATCH_DATA_NAME, [data]);
   }
 }
 
