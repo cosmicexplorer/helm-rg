@@ -245,6 +245,13 @@ This is used because `pcase' doesn't accept conditions with a single element (e.
           ,(helm-rg--join-conditions
             (--map `(guard (cl-typep ,val ',it)) types)))))
 
+(pcase-defmacro helm-rg-cl-not-typep (&rest types)
+  "Matches when the subject is any of TYPES, using `cl-typep'."
+  (helm-rg--with-gensyms (val)
+    `(and ,val
+          ,(helm-rg--join-conditions
+            (--map `(guard (not (cl-typep ,val ',it))) types)))))
+
 (pcase-defmacro helm-rg-deref-sym (sym)
   "???"
   (list 'quote (eval sym)))
