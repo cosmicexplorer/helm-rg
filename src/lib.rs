@@ -13,18 +13,6 @@ pub mod emacs;
 
 use emacs::{bindings::*, wrappers::*};
 
-/// New emacs lisp function. All function exposed to Emacs must have this prototype.
-#[no_mangle]
-pub unsafe extern "C" fn Fmymod_test(
-  env: *mut emacs_env,
-  _nargs: isize,
-  _args: *mut emacs_value,
-  _data: *mut c_void,
-) -> emacs_value {
-  let mut env = Env::new(env);
-  env.make_integer(42).get_emacs_value()
-}
-
 #[no_mangle]
 pub static plugin_is_GPL_compatible: c_int = 0;
 
@@ -36,7 +24,7 @@ fn get_fset_symbol(mut env: Env) -> Value {
 #[allow(non_snake_case)]
 fn bind_function(mut env: Env, name: &CStr, Sfun: Value) -> Value {
   /* Set the function cell of the symbol named NAME to SFUN using
-  the 'fset' function.  */
+  the 'fset' function. */
 
   /* Convert the strings to symbols by interning them */
   let Qfset = get_fset_symbol(env);
@@ -58,9 +46,9 @@ fn get_provide_symbol(mut env: Env) -> Value {
 /// call 'provide' with FEATURE converted to a symbol
 #[allow(non_snake_case)]
 fn provide(mut env: Env, feature: &CStr) {
-  let Qfeat = env.intern(feature).get_emacs_value();
+  let Qfeat = env.intern(feature);
   let Qprovide = get_provide_symbol(env);
-  let mut args: [emacs_value; 1] = [Qfeat];
+  let mut args: [emacs_value; 1] = [Qfeat.get_emacs_value()];
   env.funcall(Qprovide, &mut args);
 }
 
@@ -74,6 +62,18 @@ fn get_mymod_cstr() -> CString {
 
 fn get_mymod_test_cstr() -> CString {
   CString::new(b"mymod-test".to_vec()).expect("mymod-test is a valid string")
+}
+
+/// New emacs lisp function. All function exposed to Emacs must have this prototype.
+#[no_mangle]
+pub unsafe extern "C" fn Fmymod_test(
+  env: *mut emacs_env,
+  _nargs: isize,
+  _args: *mut emacs_value,
+  _data: *mut c_void,
+) -> emacs_value {
+  let mut env = Env::new(env);
+  env.make_integer(42).get_emacs_value()
 }
 
 #[no_mangle]
@@ -109,7 +109,10 @@ pub unsafe extern "C" fn emacs_module_init(ert: *mut emacs_runtime) -> c_int {
     ptr::null_mut(), /* user pointer of your choice (data param in Fmymod_test) */
   );
 
+  /* bind the function to its name */
   bind_function(env, &get_mymod_test_cstr(), fun);
+
+  /* provide the module */
   provide(env, &get_mymod_cstr());
 
   /* loaded successfully */
