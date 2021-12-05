@@ -6,9 +6,18 @@
 #![allow(non_snake_case)]
 #![allow(warnings)]
 
-pub mod bindings {
+pub(crate) mod bindings {
   include!("bindings.rs");
 }
+
+macro_rules! call_interned_function {
+    [$env_handle:expr, $interned_name:expr, $args:expr] => {
+      $env_handle.write().funcall(
+        $env_handle.write().get_ascii_symbol_value($interned_name),
+        $args
+      )
+    }
+  }
 
 pub mod wrappers {
   use super::bindings::*;
@@ -18,8 +27,59 @@ pub mod wrappers {
   use std::{
     convert::TryInto,
     ffi::{CStr, CString},
-    os::raw::c_void,
+    ops::{Deref, DerefMut},
+    os::raw::{c_char, c_void},
   };
+
+  use std::sync::Arc;
+
+  use parking_lot::RwLock;
+
+  #[derive(Clone)]
+  pub struct EnvHandle {
+    inner: Arc<RwLock<Env>>,
+  }
+
+  impl EnvWrapper for EnvHandle {
+    fn get_env(&self) -> Self {
+      self.clone()
+    }
+  }
+
+  impl EnvHandle {
+    pub fn new(inner: Arc<RwLock<Env>>) -> Self {
+      Self {
+        inner: inner.clone(),
+      }
+    }
+
+    pub fn get_ref(&self) -> Arc<RwLock<Env>> {
+      self.inner.clone()
+    }
+
+    pub fn copy_string_contents(&self, value: Value) -> String {
+      let env = self.get_ref();
+      let length_function = env.write().get_ascii_symbol_value("length");
+
+      let length_value = env
+        .write()
+        .funcall(length_function, &mut [value.get_emacs_value()]);
+      let size: usize = env
+        .write()
+        .extract_integer(length_value)
+        .try_into()
+        .expect("expected buffer length to be convertible to usize");
+
+      let mut buffer: Vec<c_char> = Vec::with_capacity(size);
+      assert!(env
+        .write()
+        .copy_string_contents_function(value, &mut buffer, size));
+
+      CStr::from_ptr(buffer.as_mut_ptr())
+        .to_string_lossy()
+        .to_string()
+    }
+  }
 
   macro_rules! extract_named_function {
     [$handle:expr, $func_name:ident] => {
@@ -86,6 +146,11 @@ pub mod wrappers {
     }
   }
 
+  pub trait EmacsValue {
+    fn into_emacs_value(self) -> Value;
+    fn from_emacs_value(env: EnvHandle, value: Value) -> Self;
+  }
+
   #[must_use]
   pub struct Value {
     val: emacs_value,
@@ -95,9 +160,20 @@ pub mod wrappers {
     pub fn new(val: emacs_value) -> Self {
       Self { val }
     }
+  }
 
-    pub fn get_emacs_value(self) -> emacs_value {
+  impl Value {
+    pub fn get_emacs_value(&self) -> emacs_value {
       self.val
+    }
+  }
+
+  impl EmacsValue for Value {
+    fn into_emacs_value(self) -> Value {
+      self
+    }
+    fn from_emacs_value(_env: EnvHandle, value: Value) -> Self {
+      value
     }
   }
 
@@ -106,8 +182,12 @@ pub mod wrappers {
   }
 
   pub trait EmacsEnvironment {
+    fn get_ascii_symbol_value(&mut self, s: &str) -> Value;
+
     /// Return a lisp integer.
     fn make_integer(&mut self, value: intmax_t) -> Value;
+
+    fn extract_integer(&mut self, value: Value) -> intmax_t;
 
     fn make_string(&mut self, s: &str) -> Value;
 
@@ -136,6 +216,10 @@ pub mod wrappers {
 
     /// Provide `feature` to Emacs.
     fn provide(&mut self, feature: &str) -> Value;
+
+    fn eq(&mut self, val1: Value, val2: Value) -> bool;
+
+    fn is_not_nil(&mut self, val: Value) -> bool;
   }
 
   impl Env {
@@ -147,8 +231,23 @@ pub mod wrappers {
       AsciiString::from_ascii(s).expect("string was not ASCII!")
     }
 
-    fn get_ascii_symbol_value(&mut self, s: &str) -> Value {
-      self.intern_only_ascii(&Self::ascii_string_or_panic(s))
+    pub(in crate::emacs) fn copy_string_contents_function(
+      &mut self,
+      value: Value,
+      buffer: &mut Vec<c_char>,
+      size_initial: usize,
+    ) -> bool {
+      let mut size_inout: isize = size_initial
+        .try_into()
+        .expect("expected usize to be convertible to isize");
+      let ret = extract_named_function![self.env, copy_string_contents](
+        self.env,
+        value.get_emacs_value(),
+        buffer.as_mut_ptr(),
+        &mut size_inout,
+      );
+      assert_eq!(size_initial, size_inout.try_into().unwrap());
+      ret
     }
   }
 
@@ -168,8 +267,18 @@ pub mod wrappers {
   }
 
   impl EmacsEnvironment for Env {
+    fn get_ascii_symbol_value(&mut self, s: &str) -> Value {
+      self.intern_only_ascii(&Self::ascii_string_or_panic(s))
+    }
+
     fn make_integer(&mut self, value: intmax_t) -> Value {
       Value::new(unsafe { extract_named_function![self.env, make_integer](self.env, value) })
+    }
+
+    fn extract_integer(&mut self, value: Value) -> intmax_t {
+      unsafe {
+        extract_named_function![self.env, extract_integer](self.env, value.get_emacs_value())
+      }
     }
 
     fn make_string(&mut self, s: &str) -> Value {
@@ -236,11 +345,9 @@ pub mod wrappers {
       })
     }
 
+    /// Set the function cell of the symbol named `name` to `Sfun` using the `'fset'` function.
     #[allow(non_snake_case)]
     fn bind_function(&mut self, name: &str, Sfun: Value) -> Value {
-      /* Set the function cell of the symbol named NAME to SFUN using
-      the 'fset' function. */
-
       /* Convert the strings to symbols by interning them */
       let Qfset = self.get_ascii_symbol_value("fset");
       let Qsym = self.intern_unicode(name).get_emacs_value();
@@ -259,6 +366,294 @@ pub mod wrappers {
       let Qprovide = self.get_ascii_symbol_value("provide");
       let mut args: [emacs_value; 1] = [Qfeat.get_emacs_value()];
       self.funcall(Qprovide, &mut args)
+    }
+
+    fn eq(&mut self, val1: Value, val2: Value) -> bool {
+      extract_named_function![self.env, eq](
+        self.env,
+        val1.get_emacs_value(),
+        val2.get_emacs_value(),
+      )
+    }
+
+    fn is_not_nil(&mut self, val: Value) -> bool {
+      extract_named_function![self.env, is_not_nil](self.env, val.get_emacs_value())
+    }
+  }
+
+  pub trait EnvWrapper {
+    fn get_env(&self) -> EnvHandle;
+  }
+}
+
+pub mod strings {
+  use super::{bindings::*, wrappers::*};
+
+  use std::convert::TryInto;
+
+  pub struct StringEnv {
+    env: EnvHandle,
+  }
+
+  impl StringEnv {
+    pub fn new(env: EnvHandle) -> Self {
+      Self { env }
+    }
+  }
+
+  impl EnvWrapper for StringEnv {
+    fn get_env(&self) -> EnvHandle {
+      self.env.clone()
+    }
+  }
+
+  pub struct EString {
+    string_env: StringEnv,
+    inner: Value,
+  }
+
+  impl EString {
+    pub fn new(string_env: StringEnv, inner: Value) -> Self {
+      Self { string_env, inner }
+    }
+  }
+
+  impl EmacsValue for EString {
+    fn into_emacs_value(self) -> Value {
+      self.inner
+    }
+    fn from_emacs_value(env: EnvHandle, value: Value) -> Self {
+      Self::new(StringEnv::new(env), value)
+    }
+  }
+
+  impl EnvWrapper for EString {
+    fn get_env(&self) -> EnvHandle {
+      self.string_env.get_env()
+    }
+  }
+
+  pub trait EmacsString {
+    fn length(&self) -> usize;
+    fn to_string(&self) -> String;
+  }
+
+  impl EmacsString for EString {
+    fn length(&self) -> usize {
+      let env = self.get_env().get_ref();
+      let size_value = call_interned_function![
+        env,
+        "length",
+        &mut [self.into_emacs_value().get_emacs_value()]
+      ];
+      env
+        .write()
+        .extract_integer(size_value)
+        .try_into()
+        .expect("expected string size to be convertible to usize")
+    }
+
+    fn to_string(&self) -> String {
+      self.get_env().copy_string_contents(self.into_emacs_value())
+    }
+  }
+}
+
+pub mod lists {
+  use super::{bindings::*, wrappers::*};
+
+  use std::{convert::TryInto, marker::PhantomData};
+
+  pub trait EmacsListEnvironment {
+    fn is_not_nil(&self, value: Value) -> bool;
+  }
+
+  pub struct ListEnv {
+    env: EnvHandle,
+  }
+
+  impl ListEnv {
+    pub fn new(env: EnvHandle) -> Self {
+      Self { env }
+    }
+  }
+
+  impl EnvWrapper for ListEnv {
+    fn get_env(&self) -> EnvHandle {
+      self.env.clone()
+    }
+  }
+
+  impl EmacsListEnvironment for ListEnv {
+    fn is_not_nil(&self, value: Value) -> bool {
+      self.get_env().get_ref().write().is_not_nil(value)
+    }
+  }
+
+  pub trait EmacsList<V: EmacsValue> {
+    fn length(&self) -> usize;
+    fn is_empty(&self) -> bool;
+    fn to_vec(&self) -> Vec<V>;
+  }
+
+  pub struct List<V: EmacsValue> {
+    list_env: ListEnv,
+    inner: Value,
+    _x: PhantomData<V>,
+  }
+
+  impl<V> EnvWrapper for List<V>
+  where
+    V: EmacsValue,
+  {
+    fn get_env(&self) -> EnvHandle {
+      self.list_env.get_env()
+    }
+  }
+
+  impl<V> EmacsValue for List<V>
+  where
+    V: EmacsValue,
+  {
+    fn into_emacs_value(self) -> Value {
+      self.inner
+    }
+    fn from_emacs_value(env: EnvHandle, value: Value) -> Self {
+      Self::new(ListEnv::new(env), value)
+    }
+  }
+
+  impl<V> List<V>
+  where
+    V: EmacsValue,
+  {
+    pub fn new(list_env: ListEnv, inner: Value) -> Self {
+      Self {
+        list_env,
+        inner: inner,
+        _x: PhantomData,
+      }
+    }
+  }
+
+  impl<V> EmacsList<V> for List<V>
+  where
+    V: EmacsValue,
+  {
+    fn length(&self) -> usize {
+      let env = self.get_env().get_ref();
+      let size_value = call_interned_function![
+        env,
+        "length",
+        &mut [self.into_emacs_value().get_emacs_value()]
+      ];
+      env
+        .write()
+        .extract_integer(size_value)
+        .try_into()
+        .expect("expected list size to be convertible to usize")
+    }
+
+    fn is_empty(&self) -> bool {
+      !self.list_env.is_not_nil(self.into_emacs_value())
+    }
+
+    fn to_vec(&self) -> Vec<V> {
+      if self.is_empty() {
+        return Vec::new();
+      }
+
+      let env = self.get_env().get_ref();
+      let mut cur_element =
+        call_interned_function![env, "car", &mut [self.into_emacs_value().get_emacs_value()]];
+      let rest =
+        call_interned_function![env, "cdr", &mut [self.into_emacs_value().get_emacs_value()]];
+      let mut elements: Vec<V> = Vec::with_capacity(self.length());
+
+      while self.list_env.is_not_nil(rest) {
+        elements.push(V::from_emacs_value(EnvHandle::new(env), cur_element));
+        cur_element = call_interned_function![env, "car", &mut [cur_element.get_emacs_value()]];
+        rest = call_interned_function![env, "cdr", &mut [rest.get_emacs_value()]];
+      }
+
+      elements.push(V::from_emacs_value(EnvHandle::new(env), cur_element));
+      elements
+    }
+  }
+}
+
+pub mod buffers {
+  use super::{bindings::*, lists::*, wrappers::*};
+
+  pub struct BufferEnv {
+    env: EnvHandle,
+  }
+
+  impl BufferEnv {
+    pub fn new(env: EnvHandle) -> Self {
+      Self { env: env.clone() }
+    }
+  }
+
+  impl EnvWrapper for BufferEnv {
+    fn get_env(&self) -> EnvHandle {
+      self.env.clone()
+    }
+  }
+
+  pub trait EmacsBufferEnvironment {
+    fn buffer_list(&self) -> List<Buffer>;
+  }
+
+  impl EmacsBufferEnvironment for BufferEnv {
+    fn buffer_list(&self) -> List<Buffer> {
+      let env = self.get_env().get_ref();
+      List::new(
+        ListEnv::new(EnvHandle::new(env)),
+        call_interned_function![env, "buffer-list", &mut []],
+      )
+    }
+  }
+
+  pub trait EmacsBuffer {
+    fn extract_text(&self) -> String;
+  }
+
+  pub struct Buffer {
+    buffer_env: BufferEnv,
+    inner: Value,
+  }
+
+  impl Buffer {
+    pub fn new(buffer_env: BufferEnv, inner: Value) -> Self {
+      Self { buffer_env, inner }
+    }
+  }
+
+  impl EnvWrapper for Buffer {
+    fn get_env(&self) -> EnvHandle {
+      self.buffer_env.get_env()
+    }
+  }
+
+  impl EmacsValue for Buffer {
+    fn into_emacs_value(self) -> Value {
+      self.inner
+    }
+    fn from_emacs_value(env: EnvHandle, value: Value) -> Self {
+      Self::new(BufferEnv::new(env), value)
+    }
+  }
+
+  impl EmacsBuffer for Buffer {
+    fn extract_text(&self) -> String {
+      let env = self.get_env().get_ref();
+      let text = call_interned_function![
+        env,
+        "buffer-string",
+        &mut [self.into_emacs_value().get_emacs_value()]
+      ];
+      EnvHandle::new(env).copy_string_contents(text)
     }
   }
 }

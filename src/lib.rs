@@ -3,14 +3,10 @@
 
 mod emacs;
 
-/* pub mod logic { */
-/*   pub fn buffer_list() -> Vec<u8> { */
-
-/*   } */
-/* } */
+use emacs::{bindings::*, wrappers::*};
 
 pub mod exports {
-  use super::emacs::{bindings::*, wrappers::*};
+  use super::*;
 
   use std::{
     os::raw::{c_int, c_void},

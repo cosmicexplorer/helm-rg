@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ascii = "1"
+parking_lot = "0.11"
 regex = "1"
 
 [build-dependencies]
