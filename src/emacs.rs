@@ -13,7 +13,27 @@ pub mod bindings {
 pub mod wrappers {
   use super::bindings::*;
 
-  use std::{convert::TryInto, ffi::CStr, os::raw::c_void};
+  use std::{
+    convert::TryInto,
+    ffi::{CStr, CString},
+    os::raw::c_void,
+  };
+
+  macro_rules! extract_named_function {
+    [$handle:expr, $func_name:ident] => {
+      unsafe {
+        (*$handle).$func_name.expect(&format!(
+          "{:?} should be set",
+          stringify!($func_name),
+        ))
+      }
+    }
+  }
+
+  pub enum Compatibility {
+    TooOld,
+    JustFine,
+  }
 
   pub type UserFunction = unsafe extern "C" fn(
     env: *mut emacs_env,
@@ -25,9 +45,15 @@ pub mod wrappers {
   pub trait StaticDynamicSizeCheckable {
     fn dynamic_size(&self) -> usize;
     fn static_size() -> usize;
+    fn check_compatibility(&self) -> Compatibility {
+      if self.dynamic_size() < Self::static_size() {
+        Compatibility::TooOld
+      } else {
+        Compatibility::JustFine
+      }
+    }
   }
 
-  #[derive(Copy, Clone, Debug)]
   pub struct Runtime {
     rt: *mut emacs_runtime,
   }
@@ -38,13 +64,7 @@ pub mod wrappers {
     }
 
     pub fn get_environment(&mut self) -> Env {
-      let get_environment = unsafe {
-        (*self.rt)
-          .get_environment
-          .expect("get_environment pointer should be set")
-      };
-
-      Env::new(unsafe { get_environment(self.rt) })
+      Env::new(unsafe { extract_named_function![self.rt, get_environment](self.rt) })
     }
   }
 
@@ -63,7 +83,6 @@ pub mod wrappers {
     }
   }
 
-  #[derive(Copy, Clone, Debug)]
   pub struct Value {
     val: emacs_value,
   }
@@ -78,7 +97,6 @@ pub mod wrappers {
     }
   }
 
-  #[derive(Copy, Clone, Debug)]
   pub struct Env {
     env: *mut emacs_env,
   }
@@ -89,12 +107,7 @@ pub mod wrappers {
     }
 
     pub fn make_integer(&mut self, value: intmax_t) -> Value {
-      let make_integer = unsafe {
-        (*self.env)
-          .make_integer
-          .expect("make_integer should be set")
-      };
-      Value::new(unsafe { make_integer(self.env, value) })
+      Value::new(unsafe { extract_named_function![self.env, make_integer](self.env, value) })
     }
 
     pub fn make_function(
@@ -105,14 +118,8 @@ pub mod wrappers {
       documentation: &CStr,
       data: *mut c_void,
     ) -> Value {
-      let make_function = unsafe {
-        (*self.env)
-          .make_function
-          .expect("make_function pointer should be set")
-      };
-
       Value::new(unsafe {
-        make_function(
+        extract_named_function![self.env, make_function](
           self.env,
           min_arity,
           max_arity,
@@ -124,13 +131,9 @@ pub mod wrappers {
     }
 
     pub fn intern(&mut self, symbol_name: &CStr) -> Value {
-      let intern = unsafe {
-        (*self.env)
-          .intern
-          .expect("intern function pointer should be set")
-      };
-
-      Value::new(unsafe { intern(self.env, symbol_name.as_ptr()) })
+      Value::new(unsafe {
+        extract_named_function![self.env, intern](self.env, symbol_name.as_ptr())
+      })
     }
 
     pub fn funcall<const N: usize>(
@@ -138,20 +141,50 @@ pub mod wrappers {
       function: Value,
       args: &mut [emacs_value; N],
     ) -> Value {
-      let funcall = unsafe {
-        (*self.env)
-          .funcall
-          .expect("funcall function pointer should be set")
-      };
-
       Value::new(unsafe {
-        funcall(
+        extract_named_function![self.env, funcall](
           self.env,
           function.get_emacs_value(),
           N as isize,
           args.as_mut_ptr(),
         )
       })
+    }
+
+    fn get_fset_symbol(&mut self) -> Value {
+      self.intern(&CString::new(b"fset".to_vec()).expect("\"fset\" should be a valid CStr"))
+    }
+
+    /// Bind NAME to FUN.
+    #[allow(non_snake_case)]
+    pub fn bind_function(&mut self, name: &CStr, Sfun: Value) -> Value {
+      /* Set the function cell of the symbol named NAME to SFUN using
+      the 'fset' function. */
+
+      /* Convert the strings to symbols by interning them */
+      let Qfset = self.get_fset_symbol();
+      let Qsym = self.intern(name).get_emacs_value();
+
+      /* Prepare the arguments array */
+      let mut args: [emacs_value; 2] = [Qsym, Sfun.get_emacs_value()];
+
+      /* Make the call (2 == nb of arguments) */
+      self.funcall(Qfset, &mut args)
+    }
+
+    fn get_provide_symbol(&mut self) -> Value {
+      self.intern(&CString::new(b"provide".to_vec()).expect("\"provide\" should be a valid CStr"))
+    }
+
+    /// Provide FEATURE to Emacs.
+    ///
+    /// call 'provide' with FEATURE converted to a symbol
+    #[allow(non_snake_case)]
+    pub fn provide(&mut self, feature: &CStr) {
+      let Qfeat = self.intern(feature);
+      let Qprovide = self.get_provide_symbol();
+      let mut args: [emacs_value; 1] = [Qfeat.get_emacs_value()];
+      self.funcall(Qprovide, &mut args);
     }
   }
 
