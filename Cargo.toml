@@ -1,0 +1,14 @@
+[package]
+name = "helm-rg"
+version = "0.0.0"
+edition = "2018"
+authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+regex = "1"
+
+[build-dependencies]
+bindgen = "0.59"

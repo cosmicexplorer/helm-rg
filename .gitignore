@@ -1,1 +1,10 @@
 *.elc
+
+
+# Added by cargo
+
+/target
+Cargo.lock
+
+# for testing
+/libhelm_rg.so

@@ -8,4 +8,5 @@
   (fill-column . 100)
   (highlight-80+-columns . 100))
  (emacs-lisp-mode
-  (sentence-end-double-space . nil)))
+  (sentence-end-double-space . nil))
+ (rust-mode (highlight-80+-columns . 100) (fill-column . 100)))
