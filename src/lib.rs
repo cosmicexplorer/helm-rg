@@ -3,6 +3,12 @@
 
 mod emacs;
 
+/* pub mod logic { */
+/*   pub fn buffer_list() -> Vec<u8> { */
+
+/*   } */
+/* } */
+
 pub mod exports {
   use super::emacs::{bindings::*, wrappers::*};
 
@@ -73,10 +79,10 @@ pub mod exports {
     );
 
     /* bind the function to its name */
-    env.bind_function(&get_mymod_test_cstr(), fun);
+    let _ = env.bind_function(&get_mymod_test_cstr(), fun);
 
     /* provide the module */
-    env.provide(&get_mymod_cstr());
+    let _ = env.provide(&get_mymod_cstr());
 
     /* loaded successfully */
     0

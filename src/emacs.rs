@@ -83,6 +83,7 @@ pub mod wrappers {
     }
   }
 
+  #[must_use]
   pub struct Value {
     val: emacs_value,
   }
@@ -101,16 +102,62 @@ pub mod wrappers {
     env: *mut emacs_env,
   }
 
+  pub trait EmacsEnvironment {
+    fn make_integer(&mut self, value: intmax_t) -> Value;
+    fn make_function(
+      &mut self,
+      min_arity: isize,
+      max_arity: isize,
+      function: UserFunction,
+      documentation: &CStr,
+      data: *mut c_void,
+    ) -> Value;
+    fn intern(&mut self, symbol_name: &CStr) -> Value;
+    fn funcall<const N: usize>(&mut self, function: Value, args: &mut [emacs_value; N]) -> Value;
+
+    /// Bind NAME to FUN.
+    #[allow(non_snake_case)]
+    fn bind_function(&mut self, name: &CStr, Sfun: Value) -> Value;
+
+    /// Provide FEATURE to Emacs.
+    fn provide(&mut self, feature: &CStr) -> Value;
+  }
+
   impl Env {
     pub fn new(env: *mut emacs_env) -> Self {
       Self { env }
     }
 
-    pub fn make_integer(&mut self, value: intmax_t) -> Value {
+    fn get_fset_symbol(&mut self) -> Value {
+      self.intern(&CString::new(b"fset".to_vec()).expect("\"fset\" should be a valid CStr"))
+    }
+
+    fn get_provide_symbol(&mut self) -> Value {
+      self.intern(&CString::new(b"provide".to_vec()).expect("\"provide\" should be a valid CStr"))
+    }
+  }
+
+  impl StaticDynamicSizeCheckable for Env {
+    fn dynamic_size(&self) -> usize {
+      unsafe {
+        (*self.env)
+          .size
+          .try_into()
+          .expect("isize should convert to usize for Env!")
+      }
+    }
+
+    fn static_size() -> usize {
+      std::mem::size_of::<emacs_env>()
+    }
+  }
+
+  impl EmacsEnvironment for Env {
+    fn make_integer(&mut self, value: intmax_t) -> Value {
       Value::new(unsafe { extract_named_function![self.env, make_integer](self.env, value) })
     }
 
-    pub fn make_function(
+    fn make_function(
       &mut self,
       min_arity: isize,
       max_arity: isize,
@@ -130,17 +177,13 @@ pub mod wrappers {
       })
     }
 
-    pub fn intern(&mut self, symbol_name: &CStr) -> Value {
+    fn intern(&mut self, symbol_name: &CStr) -> Value {
       Value::new(unsafe {
         extract_named_function![self.env, intern](self.env, symbol_name.as_ptr())
       })
     }
 
-    pub fn funcall<const N: usize>(
-      &mut self,
-      function: Value,
-      args: &mut [emacs_value; N],
-    ) -> Value {
+    fn funcall<const N: usize>(&mut self, function: Value, args: &mut [emacs_value; N]) -> Value {
       Value::new(unsafe {
         extract_named_function![self.env, funcall](
           self.env,
@@ -151,13 +194,8 @@ pub mod wrappers {
       })
     }
 
-    fn get_fset_symbol(&mut self) -> Value {
-      self.intern(&CString::new(b"fset".to_vec()).expect("\"fset\" should be a valid CStr"))
-    }
-
-    /// Bind NAME to FUN.
     #[allow(non_snake_case)]
-    pub fn bind_function(&mut self, name: &CStr, Sfun: Value) -> Value {
+    fn bind_function(&mut self, name: &CStr, Sfun: Value) -> Value {
       /* Set the function cell of the symbol named NAME to SFUN using
       the 'fset' function. */
 
@@ -172,34 +210,13 @@ pub mod wrappers {
       self.funcall(Qfset, &mut args)
     }
 
-    fn get_provide_symbol(&mut self) -> Value {
-      self.intern(&CString::new(b"provide".to_vec()).expect("\"provide\" should be a valid CStr"))
-    }
-
-    /// Provide FEATURE to Emacs.
-    ///
     /// call 'provide' with FEATURE converted to a symbol
     #[allow(non_snake_case)]
-    pub fn provide(&mut self, feature: &CStr) {
+    fn provide(&mut self, feature: &CStr) -> Value {
       let Qfeat = self.intern(feature);
       let Qprovide = self.get_provide_symbol();
       let mut args: [emacs_value; 1] = [Qfeat.get_emacs_value()];
-      self.funcall(Qprovide, &mut args);
-    }
-  }
-
-  impl StaticDynamicSizeCheckable for Env {
-    fn dynamic_size(&self) -> usize {
-      unsafe {
-        (*self.env)
-          .size
-          .try_into()
-          .expect("isize should convert to usize for Env!")
-      }
-    }
-
-    fn static_size() -> usize {
-      std::mem::size_of::<emacs_env>()
+      self.funcall(Qprovide, &mut args)
     }
   }
 }
