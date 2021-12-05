@@ -13,6 +13,8 @@ pub mod bindings {
 pub mod wrappers {
   use super::bindings::*;
 
+  use ascii::AsciiString;
+
   use std::{
     convert::TryInto,
     ffi::{CStr, CString},
@@ -30,6 +32,7 @@ pub mod wrappers {
     }
   }
 
+  #[must_use]
   pub enum Compatibility {
     TooOld,
     JustFine,
@@ -103,24 +106,36 @@ pub mod wrappers {
   }
 
   pub trait EmacsEnvironment {
+    /// Return a lisp integer.
     fn make_integer(&mut self, value: intmax_t) -> Value;
+
+    fn make_string(&mut self, s: &str) -> Value;
+
+    /// Generate a lisp function which can be bound to a name with [Self::bind_function].
     fn make_function(
       &mut self,
       min_arity: isize,
       max_arity: isize,
       function: UserFunction,
-      documentation: &CStr,
+      documentation: &str,
       data: *mut c_void,
     ) -> Value;
-    fn intern(&mut self, symbol_name: &CStr) -> Value;
+
+    /// Return a lisp symbol from the [AsciiString] `symbol_name`.
+    fn intern_only_ascii(&mut self, symbol_name: &AsciiString) -> Value;
+
+    /// Return a lisp symbol from the Unicode string `symbol_name`.
+    fn intern_unicode(&mut self, symbol_name: &str) -> Value;
+
+    /// Execute the lisp function `function`.
     fn funcall<const N: usize>(&mut self, function: Value, args: &mut [emacs_value; N]) -> Value;
 
-    /// Bind NAME to FUN.
+    /// Bind `Sfun` to `name` in the current environment.
     #[allow(non_snake_case)]
-    fn bind_function(&mut self, name: &CStr, Sfun: Value) -> Value;
+    fn bind_function(&mut self, name: &str, Sfun: Value) -> Value;
 
-    /// Provide FEATURE to Emacs.
-    fn provide(&mut self, feature: &CStr) -> Value;
+    /// Provide `feature` to Emacs.
+    fn provide(&mut self, feature: &str) -> Value;
   }
 
   impl Env {
@@ -128,12 +143,12 @@ pub mod wrappers {
       Self { env }
     }
 
-    fn get_fset_symbol(&mut self) -> Value {
-      self.intern(&CString::new(b"fset".to_vec()).expect("\"fset\" should be a valid CStr"))
+    fn ascii_string_or_panic(s: &str) -> AsciiString {
+      AsciiString::from_ascii(s).expect("string was not ASCII!")
     }
 
-    fn get_provide_symbol(&mut self) -> Value {
-      self.intern(&CString::new(b"provide".to_vec()).expect("\"provide\" should be a valid CStr"))
+    fn get_ascii_symbol_value(&mut self, s: &str) -> Value {
+      self.intern_only_ascii(&Self::ascii_string_or_panic(s))
     }
   }
 
@@ -157,12 +172,26 @@ pub mod wrappers {
       Value::new(unsafe { extract_named_function![self.env, make_integer](self.env, value) })
     }
 
+    fn make_string(&mut self, s: &str) -> Value {
+      let s = CString::new(s.as_bytes()).expect("could not convert into CStr in make_string");
+      Value::new(unsafe {
+        extract_named_function![self.env, make_string](
+          self.env,
+          s.as_ptr(),
+          s.to_bytes()
+            .len()
+            .try_into()
+            .expect("usize should convert to isize in make_string!"),
+        )
+      })
+    }
+
     fn make_function(
       &mut self,
       min_arity: isize,
       max_arity: isize,
       function: UserFunction,
-      documentation: &CStr,
+      documentation: &str,
       data: *mut c_void,
     ) -> Value {
       Value::new(unsafe {
@@ -171,16 +200,29 @@ pub mod wrappers {
           min_arity,
           max_arity,
           Some(function),
-          documentation.as_ptr(),
+          CString::new(documentation.as_bytes())
+            .expect("could not convert into CStr in make_function")
+            .as_ptr(),
           data,
         )
       })
     }
 
-    fn intern(&mut self, symbol_name: &CStr) -> Value {
+    fn intern_only_ascii(&mut self, symbol_name: &AsciiString) -> Value {
+      let symbol_name = CString::new(symbol_name.as_bytes().to_vec()).unwrap();
       Value::new(unsafe {
         extract_named_function![self.env, intern](self.env, symbol_name.as_ptr())
       })
+    }
+
+    fn intern_unicode(&mut self, symbol_name: &str) -> Value {
+      let intern_function = self.get_ascii_symbol_value("intern");
+      let symbol_name = self.make_string(symbol_name);
+      let mut intern_args: [emacs_value; 2] = [
+        symbol_name.get_emacs_value(),
+        self.get_ascii_symbol_value("nil").get_emacs_value(),
+      ];
+      self.funcall(intern_function, &mut intern_args)
     }
 
     fn funcall<const N: usize>(&mut self, function: Value, args: &mut [emacs_value; N]) -> Value {
@@ -195,13 +237,13 @@ pub mod wrappers {
     }
 
     #[allow(non_snake_case)]
-    fn bind_function(&mut self, name: &CStr, Sfun: Value) -> Value {
+    fn bind_function(&mut self, name: &str, Sfun: Value) -> Value {
       /* Set the function cell of the symbol named NAME to SFUN using
       the 'fset' function. */
 
       /* Convert the strings to symbols by interning them */
-      let Qfset = self.get_fset_symbol();
-      let Qsym = self.intern(name).get_emacs_value();
+      let Qfset = self.get_ascii_symbol_value("fset");
+      let Qsym = self.intern_unicode(name).get_emacs_value();
 
       /* Prepare the arguments array */
       let mut args: [emacs_value; 2] = [Qsym, Sfun.get_emacs_value()];
@@ -212,9 +254,9 @@ pub mod wrappers {
 
     /// call 'provide' with FEATURE converted to a symbol
     #[allow(non_snake_case)]
-    fn provide(&mut self, feature: &CStr) -> Value {
-      let Qfeat = self.intern(feature);
-      let Qprovide = self.get_provide_symbol();
+    fn provide(&mut self, feature: &str) -> Value {
+      let Qfeat = self.intern_unicode(feature);
+      let Qprovide = self.get_ascii_symbol_value("provide");
       let mut args: [emacs_value; 1] = [Qfeat.get_emacs_value()];
       self.funcall(Qprovide, &mut args)
     }

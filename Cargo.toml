@@ -8,6 +8,7 @@ authors = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
 crate-type = ["cdylib"]
 
 [dependencies]
+ascii = "1"
 regex = "1"
 
 [build-dependencies]

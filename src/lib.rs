@@ -13,7 +13,6 @@ pub mod exports {
   use super::emacs::{bindings::*, wrappers::*};
 
   use std::{
-    ffi::CString,
     os::raw::{c_int, c_void},
     ptr,
   };
@@ -31,18 +30,6 @@ pub mod exports {
   ) -> emacs_value {
     let mut env = Env::new(env);
     env.make_integer(42).get_emacs_value()
-  }
-
-  fn get_doc_cstr() -> CString {
-    CString::new(b"doc".to_vec()).expect("doc is a valid string")
-  }
-
-  fn get_mymod_cstr() -> CString {
-    CString::new(b"mymod".to_vec()).expect("mymod is a valid string")
-  }
-
-  fn get_mymod_test_cstr() -> CString {
-    CString::new(b"mymod-test".to_vec()).expect("mymod-test is a valid string")
   }
 
   #[no_mangle]
@@ -74,15 +61,15 @@ pub mod exports {
       0,               /* min. number of arguments */
       0,               /* max. number of arguments */
       Fmymod_test,     /* actual function pointer */
-      &get_doc_cstr(), /* docstring */
+      "doc",           /* docstring */
       ptr::null_mut(), /* user pointer of your choice (data param in Fmymod_test) */
     );
 
     /* bind the function to its name */
-    let _ = env.bind_function(&get_mymod_test_cstr(), fun);
+    let _ = env.bind_function("mymod-test", fun);
 
     /* provide the module */
-    let _ = env.provide(&get_mymod_cstr());
+    let _ = env.provide("mymod");
 
     /* loaded successfully */
     0
