@@ -41,19 +41,23 @@ pub mod exports {
      * means the module was compiled for an Emacs version newer (later) than the one which attempts
      * to load it, i.e. the module might be incompatible with the Emacs binary. */
 
-    let mut env = ert.get_environment();
+    let env = ert.get_environment();
     /* In addition, a module can verify the compatibility of the module API with what the module
      * expects. The following sample code assumes it is part of the emacs_module_init function shown
      * above:  */
     if matches!(env.check_compatibility(), Compatibility::TooOld) {
       return 2;
     }
+
+    let mut env_handle = EnvHandle::new(env);
+    let env = env_handle.get_ref();
+
     /* This calls the get_environment function using the pointer provided in the runtime structure
      * to retrieve a pointer to the API’s environment, a C struct which also has a size field
      * holding the size of the structure in bytes. */
 
     /* create a lambda (returns an emacs_value) */
-    let fun = env.make_function(
+    let fun = env.write().make_function(
       0,               /* min. number of arguments */
       0,               /* max. number of arguments */
       Fmymod_test,     /* actual function pointer */
@@ -62,10 +66,10 @@ pub mod exports {
     );
 
     /* bind the function to its name */
-    let _ = env.bind_function("mymod-test", fun);
+    let _ = env_handle.bind_function("mymod-test", fun);
 
     /* provide the module */
-    let _ = env.provide("mymod");
+    let _ = env_handle.provide("mymod");
 
     /* loaded successfully */
     0
