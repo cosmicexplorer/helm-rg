@@ -748,6 +748,13 @@ This is purely an interface change, and does not affect anything else."
   :type 'boolean
   :group 'helm-rg)
 
+(defcustom helm-rg-candidate-number-limit 200
+  "Limit candidate number of `helm-rg'.
+
+Set it to nil if you don't want this limit."
+  :type '(choice (const :tag "Disabled" nil) integer)
+  :group 'helm-rg)
+
 (defcustom helm-rg--default-expand-match-lines-for-bounce 3
   "???"
   ;; FIXME: this should be a *positive* integer!
@@ -2369,8 +2376,7 @@ will be split!"
     :action (helm-make-actions "Visit" #'helm-rg--async-action)
     :filter-one-by-one #'helm-rg--parse-process-output
     :display-to-real #'helm-rg--display-to-real
-    ;; TODO: add a `defcustom' for this.
-    ;; :candidate-number-limit 200
+    :candidate-number-limit #'helm-rg-candidate-number-limit
     ;; It doesn't seem there is any obvious way to get the original input if using
     ;; :pattern-transformer.
     :persistent-action #'helm-rg--async-persistent-action
