@@ -2271,7 +2271,8 @@ will be split!"
     (split-string-and-unquote
      (or arg-str
          (read-string
-          "rg extra args: " helm-rg--extra-args 'helm-rg--extra-args-history)))))
+          "rg extra args: " (combine-and-quote-strings helm-rg--extra-args)
+          'helm-rg--extra-args-history)))))
 
 (defun helm-rg--set-dir ()
   "Set the directory in which to invoke ripgrep and search again."
