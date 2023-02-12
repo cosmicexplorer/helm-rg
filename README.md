@@ -31,9 +31,9 @@ Also check out [rg.el](https://github.com/dajva/rg.el), which I haven't used muc
 - Use <kbd>M-g</kbd> to input a glob pattern to filter files by, e.g. `*.py`.
     - The glob pattern defaults to the value of `helm-rg-default-glob-string`, which is an empty string (matches every file) unless you customize it.
     - Pressing <kbd>M-g</kbd> again shows the same minibuffer prompt for the glob pattern, with the string that was previously input.
-- Use <kbd><left></kbd> and <kbd><right></kbd> to go up and down by files in the results.
-    - <kbd><up></kbd> and <kbd><down></kbd> simply go up and down by match result, and there may be many matches for your pattern in a single file, even multiple on a single line (which `ripgrep` reports as multiple separate results).
-    - The <kbd><left></kbd> and <kbd><right></kbd> keys will move up or down until it lands on a result from a different file than it started on.
+- Use <kbd>left</kbd> and <kbd>right</kbd> to go up and down by files in the results.
+    - <kbd>up</kbd> and <kbd>down</kbd> simply go up and down by match result, and there may be many matches for your pattern in a single file, even multiple on a single line (which `ripgrep` reports as multiple separate results).
+    - The <kbd>left</kbd> and <kbd>right</kbd> keys will move up or down until it lands on a result from a different file than it started on.
         - When moving by file, `helm-rg` will cycle around the results list, but it will print a harmless error message instead of looping infinitely if all results are from the same file.
 - Use the interactive autoloaded function `helm-rg-display-help` to see the ripgrep command's usage info.
 
